@@ -1,0 +1,54 @@
+spring:
+  application:
+    name: heating-service
+    version: @project.version@
+  profiles:
+    active: home
+  webflux:
+    base-path: "/home"
+  datasource:
+    host: ${database-host:localhost}
+    port: ${database-port:1433}
+    database: ${database-name:dummyName}
+    username: ${database-user:dummyUser}
+    password: ${database-password:dummyPassword}
+  flyway:
+    url: ${flyway-url:localhost}
+    user: ${database-user:dummyUser}
+    password: ${database-password:dummyPassword}
+    enabled: on
+  jpa:
+    show-sql: true
+
+server:
+  port: 6200
+
+logbook:
+  format:
+    style: http
+
+logging:
+  level:
+    org.zalando.logbook: trace
+
+---
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+server:
+  port: 6005
+management:
+  server:
+    port: 8005
+
+---
+
+spring:
+  config:
+    activate:
+      on-profile: test
+  flyway:
+    enabled: false
