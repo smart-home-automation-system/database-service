@@ -25,8 +25,8 @@
 		<postgresql.version>42.7.3</postgresql.version>
 
 		<!--  internal dependencies versions-->
-		<cholewa-commons.version>0.1.0</cholewa-commons.version>
-		<shelly-client.version>0.0.5</shelly-client.version>
+		<cholewa-commons.version>0.1.1</cholewa-commons.version>
+		<smart-home-sdk.version>0.0.2</smart-home-sdk.version>
 
 		<!--  plugins versions-->
 		<maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
@@ -42,11 +42,10 @@
 			<artifactId>cholewa-commons</artifactId>
 			<version>${cholewa-commons.version}</version>
 		</dependency>
-
 		<dependency>
 			<groupId>cloud.cholewa</groupId>
-			<artifactId>shelly-client</artifactId>
-			<version>${shelly-client.version}</version>
+			<artifactId>smart-home-sdk</artifactId>
+			<version>${smart-home-sdk.version}</version>
 		</dependency>
 
 		<dependency>
@@ -172,6 +171,7 @@
 							<rules>
 								<banDuplicatePomDependencyVersions/>
 								<dependencyConvergence/>
+								<requireReleaseDeps/>
 							</rules>
 						</configuration>
 						<goals>
