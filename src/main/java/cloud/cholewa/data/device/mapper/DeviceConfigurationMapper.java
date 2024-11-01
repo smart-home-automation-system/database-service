@@ -1,4 +1,4 @@
-package cloud.cholewa.data.mapper;
+package cloud.cholewa.data.device.mapper;
 
 import cloud.cholewa.data.device.api.DeviceConfigurationRequest;
 import cloud.cholewa.data.device.model.DeviceConfigurationEntity;

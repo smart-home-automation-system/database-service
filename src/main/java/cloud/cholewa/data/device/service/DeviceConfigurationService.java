@@ -3,7 +3,7 @@ package cloud.cholewa.data.device.service;
 import cloud.cholewa.data.device.api.DeviceConfigurationRequest;
 import cloud.cholewa.data.device.repository.DeviceConfigurationRepository;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
-import cloud.cholewa.data.mapper.DeviceConfigurationMapper;
+import cloud.cholewa.data.device.mapper.DeviceConfigurationMapper;
 import cloud.cholewa.home.model.IotVendor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
