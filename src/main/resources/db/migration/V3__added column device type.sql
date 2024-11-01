@@ -1,0 +1,1 @@
+ALTER TABLE device_configuration ADD COLUMN device_type VARCHAR(50);

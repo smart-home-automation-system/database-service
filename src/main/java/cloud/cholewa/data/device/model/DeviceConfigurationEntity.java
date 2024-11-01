@@ -3,8 +3,8 @@ package cloud.cholewa.data.device.model;
 import cloud.cholewa.home.model.DeviceType;
 import cloud.cholewa.home.model.EatonGateway;
 import cloud.cholewa.home.model.IotVendor;
+import cloud.cholewa.home.model.RoomName;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import lombok.Builder;
 import lombok.Value;
 import org.springframework.data.annotation.Id;
@@ -27,8 +27,7 @@ public class DeviceConfigurationEntity {
     LocalDateTime updatedAt;
 
     @NotNull
-    @Size(min = 3, max = 20)
-    String roomName;
+    RoomName roomName;
 
     @NotNull
     IotVendor iotVendor;

@@ -17,8 +17,7 @@ public interface DeviceConfigurationRepository extends R2dbcRepository<DeviceCon
         final @NotNull EatonGateway eatonGateway
     );
 
-    Mono<DeviceConfigurationEntity> findDeviceConfigurationEntityByIotVendorAndDataPointAndEatonGateway(
-        final @NotNull IotVendor iotVendor,
+    Mono<DeviceConfigurationEntity> findDeviceConfigurationEntityByDataPointAndEatonGateway(
         final @NotNull Integer dataPoint,
         final @NotNull EatonGateway eatonGateway
     );

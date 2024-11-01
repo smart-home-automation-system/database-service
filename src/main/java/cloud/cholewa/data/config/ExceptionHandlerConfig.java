@@ -1,7 +1,9 @@
 package cloud.cholewa.data.config;
 
 import cloud.cholewa.commons.error.GlobalErrorExceptionHandler;
+import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
+import cloud.cholewa.data.error.processor.DeviceConfigurationNotFoundExceptionProcessor;
 import cloud.cholewa.data.error.processor.InvalidDeviceConfigurationExceptionProcessor;
 import org.springframework.boot.autoconfigure.web.WebProperties;
 import org.springframework.boot.web.reactive.error.ErrorAttributes;
@@ -30,7 +32,8 @@ public class ExceptionHandlerConfig {
 
         globalErrorExceptionHandler.withCustomErrorProcessor(
             Map.ofEntries(
-                Map.entry(InvalidDeviceConfigurationException.class, new InvalidDeviceConfigurationExceptionProcessor())
+                Map.entry(InvalidDeviceConfigurationException.class, new InvalidDeviceConfigurationExceptionProcessor()),
+                Map.entry(DeviceConfigurationNotFoundException.class, new DeviceConfigurationNotFoundExceptionProcessor())
             )
         );
 

@@ -1,15 +1,17 @@
 package cloud.cholewa.data.device.api;
 
+import cloud.cholewa.data.device.api.model.DeviceConfigurationRequest;
+import cloud.cholewa.data.device.api.model.EatonConfigurationResponse;
 import cloud.cholewa.data.device.service.DeviceConfigurationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
@@ -34,12 +36,14 @@ public class DeviceConfigurationController {
             .then(Mono.empty());
     }
 
-
-    @GetMapping
-    Mono<ResponseEntity<Void>> getDeviceConfiguration(
-        @RequestBody(required = false) String dummyValueDueLoggingIssue
+    @GetMapping("/eaton")
+    Mono<ResponseEntity<EatonConfigurationResponse>> getDeviceConfigurationByDataPointAndEatonGateway(
+        @RequestParam final int dataPoint,
+        @RequestParam final String eatonGateway
     ) {
-        log.info("get device configuration");
-        return Mono.just(ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build());
+        log.info("Querying for Eaton device configuration for DP: {}, on gateway: {}", dataPoint, eatonGateway);
+        return deviceConfigurationService.getDeviceConfigurationByDataPointAndGateway(
+            dataPoint, eatonGateway
+        ).map(ResponseEntity::ok);
     }
 }

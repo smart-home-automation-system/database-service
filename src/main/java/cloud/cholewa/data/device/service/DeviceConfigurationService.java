@@ -1,9 +1,12 @@
 package cloud.cholewa.data.device.service;
 
-import cloud.cholewa.data.device.api.DeviceConfigurationRequest;
-import cloud.cholewa.data.device.repository.DeviceConfigurationRepository;
-import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
+import cloud.cholewa.data.device.api.model.DeviceConfigurationRequest;
+import cloud.cholewa.data.device.api.model.EatonConfigurationResponse;
 import cloud.cholewa.data.device.mapper.DeviceConfigurationMapper;
+import cloud.cholewa.data.device.repository.DeviceConfigurationRepository;
+import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
+import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
+import cloud.cholewa.home.model.EatonGateway;
 import cloud.cholewa.home.model.IotVendor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,5 +44,17 @@ public class DeviceConfigurationService {
                     return Mono.error(() -> new InvalidDeviceConfigurationException(UNKNOWN_DEVICE_CONFIGURATION.getDescription()));
                 }
             });
+    }
+
+    public Mono<EatonConfigurationResponse> getDeviceConfigurationByDataPointAndGateway(
+        final Integer dataPoint, final String gateway
+    ) {
+        return repository.findDeviceConfigurationEntityByDataPointAndEatonGateway(
+            dataPoint, EatonGateway.fromValue(gateway)
+        )
+            .map(DeviceConfigurationMapper::toEatonConfigurationResponse)
+            .switchIfEmpty(Mono.error(() -> new DeviceConfigurationNotFoundException(
+                "Not found Eaton device configuration for dataPoint: " + dataPoint))
+            );
     }
 }
