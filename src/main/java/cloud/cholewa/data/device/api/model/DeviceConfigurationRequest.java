@@ -1,4 +1,4 @@
-package cloud.cholewa.data.device.api;
+package cloud.cholewa.data.device.api.model;
 
 import cloud.cholewa.data.device.model.DeviceConfiguration;
 import com.fasterxml.jackson.annotation.JsonInclude;

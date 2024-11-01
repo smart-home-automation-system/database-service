@@ -1,9 +1,12 @@
-package cloud.cholewa.data.mapper;
+package cloud.cholewa.data.device.mapper;
 
-import cloud.cholewa.data.device.api.DeviceConfigurationRequest;
+import cloud.cholewa.data.device.api.model.DeviceConfigurationRequest;
+import cloud.cholewa.data.device.api.model.EatonConfigurationResponse;
 import cloud.cholewa.data.device.model.DeviceConfigurationEntity;
+import cloud.cholewa.home.model.DeviceType;
 import cloud.cholewa.home.model.EatonConfiguration;
 import cloud.cholewa.home.model.IotVendor;
+import cloud.cholewa.home.model.RoomName;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
@@ -17,10 +20,19 @@ public class DeviceConfigurationMapper {
 
         return DeviceConfigurationEntity.builder()
             .createdAt(LocalDateTime.now())
-            .roomName(request.getRoomName())
+            .roomName(RoomName.fromValue(request.getRoomName()))
             .iotVendor(IotVendor.fromValue(request.getIotVendor()))
+            .deviceType(DeviceType.fromValue(request.getDeviceType()))
             .dataPoint(eatonConfiguration.getDataPoint())
             .eatonGateway(eatonConfiguration.getEatonGateway())
+            .build();
+    }
+
+    public static EatonConfigurationResponse toEatonConfigurationResponse (final DeviceConfigurationEntity entity) {
+        return EatonConfigurationResponse.builder()
+            .id(entity.getId())
+            .dataPoint(entity.getDataPoint())
+            .deviceType(entity.getDeviceType())
             .build();
     }
 }

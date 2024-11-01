@@ -1,0 +1,1 @@
+ALTER TABLE device_configuration ALTER COLUMN device_type SET NOT NULL;

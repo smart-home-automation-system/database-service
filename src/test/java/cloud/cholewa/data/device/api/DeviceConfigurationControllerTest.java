@@ -1,5 +1,6 @@
 package cloud.cholewa.data.device.api;
 
+import cloud.cholewa.data.device.api.model.DeviceConfigurationRequest;
 import cloud.cholewa.data.device.service.DeviceConfigurationService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
