@@ -1,8 +1,8 @@
 package cloud.cholewa.data.device.service;
 
-import cloud.cholewa.data.device.model.DeviceConfiguration;
 import cloud.cholewa.data.error.CustomErrorDescription;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
+import cloud.cholewa.home.model.DeviceConfiguration;
 import cloud.cholewa.home.model.EatonConfiguration;
 import cloud.cholewa.home.model.EatonGateway;
 import cloud.cholewa.home.model.ShellyConfiguration;
