@@ -1,11 +1,11 @@
 package cloud.cholewa.data.device.service;
 
-import cloud.cholewa.data.device.api.model.DeviceConfigurationRequest;
-import cloud.cholewa.data.device.api.model.EatonConfigurationResponse;
 import cloud.cholewa.data.device.mapper.DeviceConfigurationMapper;
 import cloud.cholewa.data.device.repository.DeviceConfigurationRepository;
 import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
+import cloud.cholewa.home.model.DeviceConfigurationRequest;
+import cloud.cholewa.home.model.EatonConfigurationResponse;
 import cloud.cholewa.home.model.EatonGateway;
 import cloud.cholewa.home.model.IotVendor;
 import lombok.RequiredArgsConstructor;

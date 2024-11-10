@@ -1,7 +1,9 @@
 package cloud.cholewa.data.device.api;
 
-import cloud.cholewa.data.device.api.model.DeviceConfigurationRequest;
 import cloud.cholewa.data.device.service.DeviceConfigurationService;
+import cloud.cholewa.home.model.DeviceConfiguration;
+import cloud.cholewa.home.model.DeviceConfigurationRequest;
+import cloud.cholewa.home.model.EatonConfiguration;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,9 +30,12 @@ class DeviceConfigurationControllerTest {
         client.post()
             .uri("/device/configuration")
             .body(BodyInserters.fromValue(DeviceConfigurationRequest.builder()
-                    .roomName("test")
-                    .iotVendor("test")
-                    .deviceType("test")
+                .roomName("test")
+                .iotVendor("test")
+                .deviceType("test")
+                .deviceConfiguration(DeviceConfiguration.builder()
+                    .eatonConfiguration(EatonConfiguration.builder().build())
+                    .build())
                 .build()))
             .exchange()
             .expectStatus().isOk()

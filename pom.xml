@@ -25,8 +25,8 @@
 		<postgresql.version>42.7.3</postgresql.version>
 
 		<!--  internal dependencies versions-->
-		<cholewa-commons.version>0.1.1</cholewa-commons.version>
-		<smart-home-sdk.version>0.0.2</smart-home-sdk.version>
+		<cholewa-commons.version>0.1.2</cholewa-commons.version>
+		<smart-home-sdk.version>0.0.3</smart-home-sdk.version>
 
 		<!--  plugins versions-->
 		<maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>

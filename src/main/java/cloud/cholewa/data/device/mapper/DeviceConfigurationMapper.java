@@ -1,10 +1,10 @@
 package cloud.cholewa.data.device.mapper;
 
-import cloud.cholewa.data.device.api.model.DeviceConfigurationRequest;
-import cloud.cholewa.data.device.api.model.EatonConfigurationResponse;
 import cloud.cholewa.data.device.model.DeviceConfigurationEntity;
+import cloud.cholewa.home.model.DeviceConfigurationRequest;
 import cloud.cholewa.home.model.DeviceType;
 import cloud.cholewa.home.model.EatonConfiguration;
+import cloud.cholewa.home.model.EatonConfigurationResponse;
 import cloud.cholewa.home.model.IotVendor;
 import cloud.cholewa.home.model.RoomName;
 import lombok.AccessLevel;
@@ -30,7 +30,7 @@ public class DeviceConfigurationMapper {
 
     public static EatonConfigurationResponse toEatonConfigurationResponse (final DeviceConfigurationEntity entity) {
         return EatonConfigurationResponse.builder()
-            .id(entity.getId())
+            .roomName(entity.getRoomName())
             .dataPoint(entity.getDataPoint())
             .deviceType(entity.getDeviceType())
             .build();

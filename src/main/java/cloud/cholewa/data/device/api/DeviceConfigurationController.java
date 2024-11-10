@@ -1,8 +1,8 @@
 package cloud.cholewa.data.device.api;
 
-import cloud.cholewa.data.device.api.model.DeviceConfigurationRequest;
-import cloud.cholewa.data.device.api.model.EatonConfigurationResponse;
 import cloud.cholewa.data.device.service.DeviceConfigurationService;
+import cloud.cholewa.home.model.DeviceConfigurationRequest;
+import cloud.cholewa.home.model.EatonConfigurationResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,8 +42,8 @@ public class DeviceConfigurationController {
         @RequestParam final String eatonGateway
     ) {
         log.info("Querying for Eaton device configuration for DP: {}, on gateway: {}", dataPoint, eatonGateway);
-        return deviceConfigurationService.getDeviceConfigurationByDataPointAndGateway(
-            dataPoint, eatonGateway
-        ).map(ResponseEntity::ok);
+
+        return deviceConfigurationService.getDeviceConfigurationByDataPointAndGateway(dataPoint, eatonGateway)
+            .map(ResponseEntity::ok);
     }
 }
