@@ -1,0 +1,84 @@
+name: SonarQube
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    name: Build and analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+
+      - name: maven-settings-xml-action
+        uses: whelk-io/maven-settings-xml-action@9dc09b23833fa9aa7f27b63db287951856f3433d # v22
+        with:
+          servers: >
+            [
+              {
+                "id": "github-prv",
+                "username": "${{secrets.GH_PRV_USERNAME}}",
+                "password": "${{secrets.GH_PRV_PASSWORD}}"
+              },
+              {
+                "id": "github-org-smart-home",
+                "username": "${{secrets.GH_PRV_USERNAME}}",
+                "password": "${{secrets.GH_PRV_PASSWORD}}"
+              }
+            ]
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin' # Unified with CI.yml
+          cache: maven
+          overwrite-settings: false
+
+      - name: Cache SonarQube packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Build and test with JaCoCo
+        run: mvn clean org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report
+
+      - name: Build and analyze
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=smart-home-automation-system_database-service
+
+      - name: SonarQube Quality Gate check
+        id: sonar
+        uses: SonarSource/sonarqube-quality-gate-action@cf038b0e0cdecfa9e56c198bbb7d21d751d62c3b # v1.2.0
+        timeout-minutes: 5
+        continue-on-error: true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          scanMetadataReportFile: target/sonar/report-task.txt
+
+      - name: Comment PR with SonarQube results
+        if: github.event_name == 'pull_request' && steps.sonar.outcome == 'failure'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠️ **SonarQube Quality Gate failed**\n\nCheck the details in [SonarCloud](https://sonarcloud.io/project/configuration/GitHubActions?id=smart-home-automation-system_database-service)'
+            })
