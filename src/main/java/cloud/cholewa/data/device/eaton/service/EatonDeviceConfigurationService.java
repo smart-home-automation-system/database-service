@@ -23,8 +23,7 @@ public class EatonDeviceConfigurationService {
     private final EatonDeviceConfigurationMapper mapper;
 
     public Mono<Void> add(final EatonDeviceConfiguration deviceConfiguration) {
-        return repository.existsByPoint(deviceConfiguration.getPoint())
-            .hasElement()
+        return repository.existsByPointAndGateway(deviceConfiguration.getPoint(), deviceConfiguration.getGateway())
             .flatMap(exists -> exists
                 ? Mono.error(() -> new InvalidDeviceConfigurationException(CONFIGURATION_EXIST.getDescription()))
                 : repository.save(mapper.toEntity(deviceConfiguration)).then()
@@ -40,7 +39,7 @@ public class EatonDeviceConfigurationService {
                     eatonConfiguration.getRoom()
                 )
             )
-            .map(mapper::map)
+            .map(mapper::toResponse)
             .switchIfEmpty(Mono.error(() -> new DeviceConfigurationNotFoundException(
                 "Device not found for point: " + dataPoint + " on gateway: " + gateway)));
     }

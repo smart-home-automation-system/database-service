@@ -1,5 +1,6 @@
 package cloud.cholewa.data.device.eaton.api;
 
+import cloud.cholewa.data.config.ExceptionHandlerConfig;
 import cloud.cholewa.data.device.eaton.service.EatonDeviceConfigurationService;
 import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
@@ -11,6 +12,7 @@ import cloud.cholewa.home.model.SmartDeviceType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
@@ -21,11 +23,17 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+@Import(ExceptionHandlerConfig.class)
 @WebFluxTest(controllers = EatonDeviceConfigurationController.class)
 class EatonDeviceConfigurationControllerTest {
 
-    private static final EatonDeviceConfiguration EATON_DEVICE_CONFIGURATION = EatonDeviceConfiguration.builder()
-        .point(1).type(SmartDeviceType.BLINDS).gateway(EatonGatewayType.BLINDS).room(RoomName.LIVING_ROOM).build();
+    private static final EatonDeviceConfiguration EATON_DEVICE_CONFIGURATION =
+        EatonDeviceConfiguration.builder()
+            .point(1)
+            .type(SmartDeviceType.BLINDS)
+            .gateway(EatonGatewayType.BLINDS)
+            .room(RoomName.LIVING_ROOM)
+            .build();
 
     @Autowired
     private WebTestClient webTestClient;
@@ -38,10 +46,10 @@ class EatonDeviceConfigurationControllerTest {
         when(eatonDeviceConfigurationService.add(any())).thenReturn(Mono.empty());
 
         webTestClient.post()
-            .uri("/device/configuration")
+            .uri("/device/configuration/eaton")
             .body(BodyInserters.fromValue(EATON_DEVICE_CONFIGURATION))
             .exchange()
-            .expectStatus().isOk()
+            .expectStatus().isCreated()
             .expectBody(Void.class);
     }
 
@@ -51,10 +59,10 @@ class EatonDeviceConfigurationControllerTest {
             .thenReturn(Mono.error(new InvalidDeviceConfigurationException("test")));
 
         webTestClient.post()
-            .uri("/device/configuration")
+            .uri("/device/configuration/eaton")
             .body(BodyInserters.fromValue(EATON_DEVICE_CONFIGURATION))
             .exchange()
-            .expectStatus().is5xxServerError();
+            .expectStatus().isBadRequest();
     }
 
     @Test
@@ -63,7 +71,7 @@ class EatonDeviceConfigurationControllerTest {
             .thenReturn(Mono.just(EatonConfigurationResponse.builder().build()));
 
         webTestClient.get()
-            .uri("/device/configuration/eaton?dataPoint=1&gateway=blinds")
+            .uri("/device/configuration/eaton?point=1&gateway=blinds")
             .exchange()
             .expectStatus().isOk()
             .expectBody(EatonConfigurationResponse.class);
@@ -75,8 +83,8 @@ class EatonDeviceConfigurationControllerTest {
             .thenReturn(Mono.error(new DeviceConfigurationNotFoundException("test")));
 
         webTestClient.get()
-            .uri("/device/configuration/eaton?dataPoint=1&gateway=blinds")
+            .uri("/device/configuration/eaton?point=1&gateway=blinds")
             .exchange()
-            .expectStatus().is5xxServerError();
+            .expectStatus().isNotFound();
     }
 }

@@ -13,5 +13,4 @@ public class DatabaseServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(DatabaseServiceApplication.class, args);
     }
-
 }
