@@ -11,7 +11,7 @@ public enum CustomErrorDescription implements ErrorId {
     MISSING_DEVICE_CONFIGURATION("Device configuration is missing"),
     TOO_MANY_CONFIGURATIONS("More than one device configuration provided"),
     UNKNOWN_DEVICE_CONFIGURATION("Unknown device configuration"),
-    CONFIGURATION_EXIST_IN_DATABASE("Configuration exist in database"),
+    CONFIGURATION_EXIST("Configuration exist in database"),
     NOT_FOUND_DEVICE_CONFIGURATION("Device configuration not found");
 
     @Getter

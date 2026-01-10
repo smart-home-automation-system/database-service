@@ -25,10 +25,11 @@
 		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
 
 		<logbook.version>3.12.3</logbook.version>
+		<mapstruct.version>1.6.3</mapstruct.version>
 
 		<!--  internal dependencies versions-->
 		<cholewa-commons.version>0.2.0</cholewa-commons.version>
-		<smart-home-sdk.version>0.0.4</smart-home-sdk.version>
+		<smart-home-sdk.version>0.0.1-SNAPSHOT</smart-home-sdk.version>
 
 		<!--  plugins versions-->
 		<maven-enforcer-plugin.version>3.6.2</maven-enforcer-plugin.version>
@@ -113,6 +114,17 @@
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.mapstruct</groupId>
+			<artifactId>mapstruct</artifactId>
+			<version>${mapstruct.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.mapstruct</groupId>
+			<artifactId>mapstruct-processor</artifactId>
+			<version>${mapstruct.version}</version>
+			<scope>provided</scope>
 		</dependency>
 
 		<dependency>

@@ -1,9 +1,8 @@
-package cloud.cholewa.data.device.model;
+package cloud.cholewa.data.device.eaton.model;
 
-import cloud.cholewa.home.model.DeviceType;
-import cloud.cholewa.home.model.EatonGateway;
-import cloud.cholewa.home.model.IotVendor;
+import cloud.cholewa.home.model.EatonGatewayType;
 import cloud.cholewa.home.model.RoomName;
+import cloud.cholewa.home.model.SmartDeviceType;
 import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import lombok.Value;
@@ -12,9 +11,9 @@ import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
-@Table("device_configuration")
 @Value
 @Builder
+@Table("eaton_devices")
 public class DeviceConfigurationEntity {
 
     @Id
@@ -23,19 +22,16 @@ public class DeviceConfigurationEntity {
     @NotNull
     LocalDateTime createdAt;
 
-    @NotNull
     LocalDateTime updatedAt;
 
-    @NotNull
-    RoomName roomName;
+    Integer point;
 
     @NotNull
-    IotVendor iotVendor;
+    RoomName room;
 
     @NotNull
-    DeviceType deviceType;
+    SmartDeviceType type;
 
-    Integer dataPoint;
-
-    EatonGateway eatonGateway;
+    @NotNull
+    EatonGatewayType gateway;
 }
