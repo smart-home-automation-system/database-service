@@ -30,8 +30,7 @@ logbook:
 logging:
   level:
     org.zalando.logbook: trace
-    io.r2dbc.postgresql.QUERY: DEBUG
-    io.r2dbc.postgresql.PARAM: DEBUG
+#    io.r2dbc.postgresql.PARAM: DEBUG
 
 ---
 
