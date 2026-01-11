@@ -1,6 +1,6 @@
 spring:
   application:
-    name: heating-service
+    name: database-service
     version: @project.version@
   profiles:
     active: home
@@ -30,6 +30,7 @@ logbook:
 logging:
   level:
     org.zalando.logbook: trace
+#    io.r2dbc.postgresql.PARAM: DEBUG
 
 ---
 
