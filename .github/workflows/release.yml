@@ -9,10 +9,6 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: database-service
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
