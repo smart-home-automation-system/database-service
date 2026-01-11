@@ -23,12 +23,22 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: 'maven'
+          server-id: github-prv
+          server-username: x-access-token
+          server-password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Maven settings for organization
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          server-id: github-org-smart-home
+          server-username: x-access-token
+          server-password: ${{ secrets.GITHUB_TOKEN }}
+          overwrite-settings: false
 
       - name: Build with Maven
-        run: |
-          mkdir -p ~/.m2
-          echo "<settings><servers><server><id>github-prv</id><username>x-access-token</username><password>\${{ secrets.GITHUB_TOKEN }}</password></server><server><id>github-org-smart-home</id><username>x-access-token</username><password>\${{ secrets.GITHUB_TOKEN }}</password></server></servers></settings>" > ~/.m2/settings.xml
-          mvn -B package -DskipTests --file pom.xml
+        run: mvn -B package -DskipTests --file pom.xml
 
       - name: Log in to Docker Hub
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3
