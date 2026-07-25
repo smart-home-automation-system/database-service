@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.r2dbc.core.DefaultReactiveDataAccessStrategy;
 import org.springframework.data.r2dbc.core.R2dbcEntityOperations;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
-import org.springframework.data.r2dbc.dialect.SqlServerDialect;
+import org.springframework.data.r2dbc.dialect.PostgresDialect;
 import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
 import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -50,7 +50,7 @@ public class DbConfig {
 
     @Bean
     R2dbcEntityOperations entityTemplate(ConnectionFactory connectionFactory) {
-        DefaultReactiveDataAccessStrategy strategy = new DefaultReactiveDataAccessStrategy(SqlServerDialect.INSTANCE);
+        DefaultReactiveDataAccessStrategy strategy = new DefaultReactiveDataAccessStrategy(PostgresDialect.INSTANCE);
 
         DatabaseClient databaseClient = DatabaseClient.builder().connectionFactory(connectionFactory).build();
 
