@@ -38,10 +38,13 @@ schema is managed by **Flyway**, and the whole request path is non-blocking (Spr
 - Build: `mvn verify` (JDK 21).
 - Ports: local profile `6005` (management `8005`); in the deployed `home` profile the
   service listens on `6200` like every service in the cluster.
-- Requires a reachable PostgreSQL instance. Connection properties (all with a dummy
-  default, so the context starts without them):
-  `database-host`, `database-port`, `database-name`, `database-user`, `database-password`
-  and `flyway-url` for the migration connection.
+- Requires a reachable PostgreSQL instance. The R2DBC connection properties
+  (`database-host`, `database-port`, `database-name`, `database-user`, `database-password`)
+  have placeholder defaults, so the context starts without them and fails on the first
+  query instead.
+- `flyway-url` has no usable default — the placeholder is not a JDBC URL, so Flyway
+  refuses to parse it and the application does not start. Pass a real one, e.g.
+  `--flyway-url=jdbc:postgresql://localhost:5432/<database>`.
 - Flyway is enabled in `home`/`local` and disabled in the `test` profile.
 
 # API
