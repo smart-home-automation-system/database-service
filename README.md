@@ -10,8 +10,8 @@
 ---
 
 ![GitHub top language](https://img.shields.io/github/languages/top/smart-home-automation-system/database-service?style=plastic)
-![Java](https://img.shields.io/badge/java-17-yellow?style=plastic)
-![SpringBoot](https://img.shields.io/badge/SpringBoot-4.0.1-blue?style=plastic)
+![Java](https://img.shields.io/badge/java-21-yellow?style=plastic)
+![SpringBoot](https://img.shields.io/badge/SpringBoot-4.1.0-blue?style=plastic)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=smart-home-automation-system_database-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=smart-home-automation-system_database-service)
 [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=smart-home-automation-system_database-service&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=smart-home-automation-system_database-service)
 
@@ -24,4 +24,45 @@
 
 ---
 
-The general purpose of this service is to provide database access.
+# Description
+
+Persistence facade for the smart-home-automation-system — the other services do not talk to
+the database directly, they go through this one. Today it stores the **configuration of
+Eaton devices**: which data point on which gateway corresponds to which device type in
+which room. PostgreSQL is accessed reactively over **R2DBC** (Spring Data R2DBC), the
+schema is managed by **Flyway**, and the whole request path is non-blocking (Spring WebFlux
+/ Reactor). Domain models come from the shared `smart-home-sdk`.
+
+# Run locally
+
+- Build: `mvn verify` (JDK 21).
+- Ports: local profile `6005` (management `8005`); in the deployed `home` profile the
+  service listens on `6200` like every service in the cluster.
+- Requires a reachable PostgreSQL instance. The R2DBC connection properties
+  (`database-host`, `database-port`, `database-name`, `database-user`, `database-password`)
+  have placeholder defaults, so the context starts without them and fails on the first
+  query instead.
+- `flyway-url` has no usable default — the placeholder is not a JDBC URL, so Flyway
+  refuses to parse it and the application does not start. Pass a real one, e.g.
+  `--flyway-url=jdbc:postgresql://localhost:5432/<database>`.
+- Flyway is enabled in `home`/`local` and disabled in the `test` profile.
+
+# API
+
+Base path `/home` (`spring.webflux.base-path`); external traffic reaches it through
+`api-gateway-service`.
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/home/device/configuration/eaton` | Register an Eaton device configuration (`EatonDeviceConfiguration`: point, room, type, gateway). Returns `201 Created`; a configuration already registered for that point + gateway returns `400 Bad Request`. |
+| `GET` | `/home/device/configuration/eaton?point=<n>&gateway=<name>` | Look up the configuration for a data point on a gateway. Returns `200 OK` with `EatonConfigurationResponse`; `404 Not Found` when no such configuration exists. |
+
+Errors are rendered through `cholewa-commons`' `GlobalErrorExceptionHandler`, so failures
+come back in the shared `Errors` JSON contract.
+
+# Database
+
+- **Access:** reactive, via `r2dbc-postgresql` and Spring Data R2DBC repositories.
+- **Migrations:** Flyway (JDBC driver) from `src/main/resources/db/migration`.
+- **Schema:** table `eaton_devices` (`point`, `room`, `type`, `gateway` + audit timestamps).
+  The original `device_configuration` table was superseded by it and dropped in `V6`.

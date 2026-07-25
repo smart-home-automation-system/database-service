@@ -25,7 +25,7 @@ server:
 
 logbook:
   format:
-    style: http
+    style: json
 
 logging:
   level:
@@ -44,6 +44,10 @@ server:
 management:
   server:
     port: 8005
+
+logbook:
+  format:
+    style: http
 
 ---
 

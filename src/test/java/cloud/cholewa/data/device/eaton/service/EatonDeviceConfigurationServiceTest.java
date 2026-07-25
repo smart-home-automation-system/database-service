@@ -25,7 +25,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -53,18 +52,16 @@ class EatonDeviceConfigurationServiceTest {
     @Test
     void should_add_device_configuration_when_configuration_not_exists() {
         when(repository.existsByPointAndGateway(anyInt(), any())).thenReturn(Mono.just(false));
-
         when(repository.save(any())).thenReturn(Mono.just(EatonDeviceConfigurationEntity.builder().build()));
-
         when(mapper.toEntity(any())).thenReturn(EatonDeviceConfigurationEntity.builder().build());
 
         sut.add(EATON_DEVICE_CONFIGURATION)
             .as(StepVerifier::create)
             .verifyComplete();
 
-        verify(repository, times(1)).existsByPointAndGateway(anyInt(), any());
-        verify(repository, times(1)).save(any());
-        verify(mapper, times(1)).toEntity(any());
+        verify(repository).existsByPointAndGateway(anyInt(), any());
+        verify(repository).save(any());
+        verify(mapper).toEntity(any());
     }
 
     @Test
@@ -77,7 +74,7 @@ class EatonDeviceConfigurationServiceTest {
                 && throwable.getMessage().equals("Configuration exist in database"))
             .verify();
 
-        verify(repository, times(1)).existsByPointAndGateway(anyInt(), eq(BLINDS));
+        verify(repository).existsByPointAndGateway(anyInt(), eq(BLINDS));
         verify(repository, never()).existsByPointAndGateway(anyInt(), eq(LIGHTS));
         verify(repository, never()).save(any());
         verify(mapper, never()).toEntity(any());
@@ -104,7 +101,6 @@ class EatonDeviceConfigurationServiceTest {
     void should_find_eaton_device_when_configuration_exists() {
         when(repository.findByPointAndGateway(anyInt(), any()))
             .thenReturn(Mono.just(EatonDeviceConfigurationEntity.builder().point(1).room(LIVING_ROOM).build()));
-
         when(mapper.toResponse(any()))
             .thenReturn(EatonConfigurationResponse.builder().room(LIVING_ROOM).build());
 
@@ -113,7 +109,7 @@ class EatonDeviceConfigurationServiceTest {
             .expectNextCount(1)
             .verifyComplete();
 
-        verify(repository, times(1)).findByPointAndGateway(anyInt(), any());
-        verify(mapper, times(1)).toResponse(any());
+        verify(repository).findByPointAndGateway(anyInt(), any());
+        verify(mapper).toResponse(any());
     }
 }
