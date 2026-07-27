@@ -66,3 +66,8 @@ come back in the shared `Errors` JSON contract.
 - **Migrations:** Flyway (JDBC driver) from `src/main/resources/db/migration`.
 - **Schema:** table `eaton_devices` (`point`, `room`, `type`, `gateway` + audit timestamps).
   The original `device_configuration` table was superseded by it and dropped in `V6`.
+- **Constraints** (`V7`): `(point, gateway)` is unique — it is the natural key of an Eaton
+  device. Every gateway numbers its own devices, so the same `point` on a *different*
+  gateway is perfectly valid and stays allowed; only the exact pair cannot repeat. `point`
+  is additionally checked to be within `1..99`, the range an Eaton gateway addresses.
+  A violation of either surfaces as `400`, not `500` — see the API table.

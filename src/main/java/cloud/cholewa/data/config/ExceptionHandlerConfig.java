@@ -4,6 +4,7 @@ import cloud.cholewa.commons.error.GlobalErrorExceptionHandler;
 import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
 import cloud.cholewa.data.error.processor.DeviceConfigurationNotFoundExceptionProcessor;
+import cloud.cholewa.data.error.processor.DuplicateConfigurationExceptionProcessor;
 import cloud.cholewa.data.error.processor.InvalidDeviceConfigurationExceptionProcessor;
 import org.springframework.boot.autoconfigure.web.WebProperties;
 import org.springframework.boot.webflux.error.ErrorAttributes;
@@ -11,6 +12,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.codec.ServerCodecConfigurer;
 
 import java.util.Map;
@@ -39,7 +41,8 @@ public class ExceptionHandlerConfig {
                 Map.entry(
                     DeviceConfigurationNotFoundException.class,
                     new DeviceConfigurationNotFoundExceptionProcessor()
-                )
+                ),
+                Map.entry(DuplicateKeyException.class, new DuplicateConfigurationExceptionProcessor())
             )
         );
 

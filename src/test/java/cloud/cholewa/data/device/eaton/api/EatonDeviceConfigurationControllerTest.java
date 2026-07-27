@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
@@ -86,5 +87,20 @@ class EatonDeviceConfigurationControllerTest {
             .uri("/device/configuration/eaton?point=1&gateway=blinds")
             .exchange()
             .expectStatus().isNotFound();
+    }
+
+    @Test
+    void should_return_bad_request_when_configuration_violates_unique_constraint() {
+        when(eatonDeviceConfigurationService.add(any()))
+            .thenReturn(Mono.error(new DuplicateKeyException("test")));
+
+        webTestClient.post()
+            .uri("/device/configuration/eaton")
+            .body(BodyInserters.fromValue(EATON_DEVICE_CONFIGURATION))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Invalid device configuration")
+            .jsonPath("$.errors[0].details").isEqualTo("Configuration exist in database");
     }
 }
