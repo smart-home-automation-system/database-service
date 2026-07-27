@@ -10,18 +10,18 @@ import org.springframework.http.HttpStatus;
 import java.util.Collections;
 
 @Slf4j
-public class DeviceConfigurationNotFoundExceptionProcessor implements ExceptionProcessor {
+public class DuplicateConfigurationExceptionProcessor implements ExceptionProcessor {
 
     @Override
     public Errors apply(final Throwable throwable) {
         log.warn("Handled [{}]: {}", throwable.getClass().getSimpleName(), throwable.getMessage());
 
         return Errors.builder()
-            .httpStatus(HttpStatus.NOT_FOUND)
+            .httpStatus(HttpStatus.BAD_REQUEST)
             .errors(Collections.singleton(
                 ErrorMessage.builder()
-                    .message(CustomErrorDescription.NOT_FOUND_DEVICE_CONFIGURATION.getDescription())
-                    .details(throwable.getMessage())
+                    .message("Invalid device configuration")
+                    .details(CustomErrorDescription.CONFIGURATION_EXIST.getDescription())
                     .build()
             ))
             .build();
