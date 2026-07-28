@@ -3,6 +3,7 @@ package cloud.cholewa.data.device.eaton.api;
 import cloud.cholewa.data.device.eaton.service.EatonDeviceConfigurationService;
 import cloud.cholewa.home.model.EatonConfigurationResponse;
 import cloud.cholewa.home.model.EatonDeviceConfiguration;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -25,7 +26,7 @@ public class EatonDeviceConfigurationController {
 
     @PostMapping
     Mono<ResponseEntity<Void>> addEatonDeviceConfiguration(
-        @RequestBody final EatonDeviceConfiguration eatonDeviceConfiguration
+        @Valid @RequestBody final EatonDeviceConfiguration eatonDeviceConfiguration
     ) {
         return eatonDeviceConfigurationService.add(eatonDeviceConfiguration)
             .doOnSubscribe(subscription ->
