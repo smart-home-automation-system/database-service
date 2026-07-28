@@ -49,13 +49,15 @@ schema is managed by **Flyway**, and the whole request path is non-blocking (Spr
 
 # API
 
-Base path `/home` (`spring.webflux.base-path`); external traffic reaches it through
-`api-gateway-service`.
+Base path `/home` (`spring.webflux.base-path`). The service is internal — it does not
+register with service discovery and `api-gateway-service` defines no route to it, so it is
+not reachable from outside the cluster. `amx-service` calls it directly over the cluster
+network (`internal.service.database` in its configuration).
 
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/home/device/configuration/eaton` | Register an Eaton device configuration (`EatonDeviceConfiguration`: point, room, type, gateway). Returns `201 Created`; a configuration already registered for that point + gateway returns `400 Bad Request`. |
-| `GET` | `/home/device/configuration/eaton?point=<n>&gateway=<name>` | Look up the configuration for a data point on a gateway. Returns `200 OK` with `EatonConfigurationResponse`; `404 Not Found` when no such configuration exists. |
+| `GET` | `/home/device/configuration/eaton?point=<n>&gateway=<name>` | Look up the configuration for a data point on a gateway. `gateway` is `blinds` or `lights`, matched case-insensitively (`amx-service` sends `BLINDS`). Returns `200 OK` with `EatonConfigurationResponse`; `404 Not Found` when no configuration exists for the pair; `400 Bad Request` when `gateway` is not one of the known values. |
 
 Errors are rendered through `cholewa-commons`' `GlobalErrorExceptionHandler`, so failures
 come back in the shared `Errors` JSON contract.
