@@ -9,7 +9,8 @@ import lombok.RequiredArgsConstructor;
 public enum CustomErrorDescription implements ErrorId {
 
     CONFIGURATION_EXIST("Configuration exist in database"),
-    NOT_FOUND_DEVICE_CONFIGURATION("Device configuration not found");
+    NOT_FOUND_DEVICE_CONFIGURATION("Device configuration not found"),
+    UNKNOWN_GATEWAY("Unknown Eaton gateway");
 
     @Getter
     private final String description;

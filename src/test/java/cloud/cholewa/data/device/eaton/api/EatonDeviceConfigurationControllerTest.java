@@ -103,4 +103,18 @@ class EatonDeviceConfigurationControllerTest {
             .jsonPath("$.errors[0].message").isEqualTo("Invalid device configuration")
             .jsonPath("$.errors[0].details").isEqualTo("Configuration exist in database");
     }
+
+    @Test
+    void should_return_bad_request_when_unknown_gateway() {
+        when(eatonDeviceConfigurationService.get(anyInt(), anyString()))
+            .thenReturn(Mono.error(new InvalidDeviceConfigurationException("Unknown Eaton gateway")));
+
+        webTestClient.get()
+            .uri("/device/configuration/eaton?point=1&gateway=garden")
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Invalid device configuration")
+            .jsonPath("$.errors[0].details").isEqualTo("Unknown Eaton gateway");
+    }
 }

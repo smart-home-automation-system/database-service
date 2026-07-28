@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import static cloud.cholewa.data.error.CustomErrorDescription.UNKNOWN_GATEWAY;
 import static cloud.cholewa.home.model.EatonGatewayType.BLINDS;
 import static cloud.cholewa.home.model.EatonGatewayType.LIGHTS;
 import static cloud.cholewa.home.model.RoomName.LIVING_ROOM;
@@ -98,7 +99,7 @@ class EatonDeviceConfigurationServiceTest {
     }
 
     @Test
-    void should_find_eaton_device_when_configuration_exists() {
+    void should_find_eaton_device_when_configuration_exists_for_lowercase_gateway() {
         when(repository.findByPointAndGateway(anyInt(), any()))
             .thenReturn(Mono.just(EatonDeviceConfigurationEntity.builder().point(1).room(LIVING_ROOM).build()));
         when(mapper.toResponse(any()))
@@ -111,5 +112,34 @@ class EatonDeviceConfigurationServiceTest {
 
         verify(repository).findByPointAndGateway(anyInt(), any());
         verify(mapper).toResponse(any());
+    }
+
+    @Test
+    void should_find_eaton_device_when_configuration_exists_for_uppercase_gateway() {
+        when(repository.findByPointAndGateway(anyInt(), any()))
+            .thenReturn(Mono.just(EatonDeviceConfigurationEntity.builder().point(1).room(LIVING_ROOM).build()));
+        when(mapper.toResponse(any()))
+            .thenReturn(EatonConfigurationResponse.builder().room(LIVING_ROOM).build());
+
+        sut.get(1, "BLINDS")
+            .as(StepVerifier::create)
+            .expectNextCount(1)
+            .verifyComplete();
+
+        verify(repository).findByPointAndGateway(anyInt(), any());
+        verify(mapper).toResponse(any());
+    }
+
+    @Test
+    void should_throw_exception_for_unknown_gateway() {
+
+        sut.get(1, "garden")
+            .as(StepVerifier::create)
+            .expectErrorSatisfies(throwable ->
+                Assertions.assertThat(throwable)
+                    .isInstanceOf(InvalidDeviceConfigurationException.class)
+                    .hasMessageContaining(UNKNOWN_GATEWAY.getDescription() + ": garden")
+            )
+            .verify();
     }
 }

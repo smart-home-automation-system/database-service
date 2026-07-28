@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import static cloud.cholewa.data.error.CustomErrorDescription.CONFIGURATION_EXIST;
+import static cloud.cholewa.data.error.CustomErrorDescription.UNKNOWN_GATEWAY;
 
 @Slf4j
 @Service
@@ -31,7 +32,12 @@ public class EatonDeviceConfigurationService {
     }
 
     public Mono<EatonConfigurationResponse> get(final Integer dataPoint, final String gateway) {
-        return repository.findByPointAndGateway(dataPoint, EatonGatewayType.fromValue(gateway))
+        return Mono.fromCallable(() -> EatonGatewayType.fromValue(gateway))
+            .onErrorMap(
+                IllegalArgumentException.class,
+                e -> new InvalidDeviceConfigurationException(UNKNOWN_GATEWAY.getDescription() + ": " + gateway)
+            )
+            .flatMap(gatewayType -> repository.findByPointAndGateway(dataPoint, gatewayType))
             .doOnNext(eatonConfiguration ->
                 log.info(
                     "Found Eaton device configuration for dataPoint: {}, in room: {}",
