@@ -126,13 +126,12 @@ class EatonDeviceConfigurationServiceTest {
             .expectNextCount(1)
             .verifyComplete();
 
-        verify(repository).findByPointAndGateway(anyInt(), any());
+        verify(repository).findByPointAndGateway(anyInt(), eq(BLINDS));
         verify(mapper).toResponse(any());
     }
 
     @Test
     void should_throw_exception_for_unknown_gateway() {
-
         sut.get(1, "garden")
             .as(StepVerifier::create)
             .expectErrorSatisfies(throwable ->
@@ -141,5 +140,8 @@ class EatonDeviceConfigurationServiceTest {
                     .hasMessageContaining(UNKNOWN_GATEWAY.getDescription() + ": garden")
             )
             .verify();
+
+        verifyNoInteractions(repository);
+        verifyNoInteractions(mapper);
     }
 }
