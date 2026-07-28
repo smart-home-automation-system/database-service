@@ -56,7 +56,7 @@ network (`internal.service.database` in its configuration).
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/home/device/configuration/eaton` | Register an Eaton device configuration (`EatonDeviceConfiguration`: point, room, type, gateway). Returns `201 Created`; a configuration already registered for that point + gateway returns `400 Bad Request`. |
+| `POST` | `/home/device/configuration/eaton` | Register an Eaton device configuration (`EatonDeviceConfiguration`: point, room, type, gateway — all four required, `point` in the range 1..99). Returns `201 Created`; an incomplete body or a `point` outside the range returns `400 Bad Request`, and so does a configuration already registered for that point + gateway. |
 | `GET` | `/home/device/configuration/eaton?point=<n>&gateway=<name>` | Look up the configuration for a data point on a gateway. `gateway` is `blinds` or `lights`, matched case-insensitively (`amx-service` sends `BLINDS`). Returns `200 OK` with `EatonConfigurationResponse`; `404 Not Found` when no configuration exists for the pair; `400 Bad Request` when `gateway` is not one of the known values. |
 
 Errors are rendered through `cholewa-commons`' `GlobalErrorExceptionHandler`, so failures
