@@ -12,12 +12,15 @@ import cloud.cholewa.home.model.SmartDeviceType;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import static cloud.cholewa.data.error.CustomErrorDescription.UNKNOWN_GATEWAY;
 import static cloud.cholewa.home.model.EatonGatewayType.BLINDS;
 import static cloud.cholewa.home.model.EatonGatewayType.LIGHTS;
 import static cloud.cholewa.home.model.RoomName.LIVING_ROOM;
@@ -97,19 +100,34 @@ class EatonDeviceConfigurationServiceTest {
         verifyNoMoreInteractions(repository);
     }
 
-    @Test
-    void should_find_eaton_device_when_configuration_exists() {
+    @ParameterizedTest
+    @ValueSource(strings = {"blinds", "BLINDS"})
+    void should_find_eaton_device_when_configuration_exists(final String gateway) {
         when(repository.findByPointAndGateway(anyInt(), any()))
             .thenReturn(Mono.just(EatonDeviceConfigurationEntity.builder().point(1).room(LIVING_ROOM).build()));
         when(mapper.toResponse(any()))
             .thenReturn(EatonConfigurationResponse.builder().room(LIVING_ROOM).build());
 
-        sut.get(1, "blinds")
+        sut.get(1, gateway)
             .as(StepVerifier::create)
             .expectNextCount(1)
             .verifyComplete();
 
-        verify(repository).findByPointAndGateway(anyInt(), any());
+        verify(repository).findByPointAndGateway(anyInt(), eq(BLINDS));
         verify(mapper).toResponse(any());
+    }
+
+    @Test
+    void should_throw_exception_for_unknown_gateway() {
+        sut.get(1, "garden")
+            .as(StepVerifier::create)
+            .expectErrorSatisfies(throwable ->
+                Assertions.assertThat(throwable)
+                    .isInstanceOf(InvalidDeviceConfigurationException.class)
+                    .hasMessageContaining(UNKNOWN_GATEWAY.getDescription() + ": garden")
+            )
+            .verify();
+
+        verifyNoInteractions(repository, mapper);
     }
 }
