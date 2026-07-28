@@ -107,7 +107,7 @@ class EatonDeviceConfigurationControllerTest {
     @Test
     void should_return_bad_request_when_unknown_gateway() {
         when(eatonDeviceConfigurationService.get(anyInt(), anyString()))
-            .thenReturn(Mono.error(new InvalidDeviceConfigurationException("Unknown Eaton gateway")));
+            .thenReturn(Mono.error(new InvalidDeviceConfigurationException("Unknown Eaton gateway: garden")));
 
         webTestClient.get()
             .uri("/device/configuration/eaton?point=1&gateway=garden")
@@ -115,6 +115,6 @@ class EatonDeviceConfigurationControllerTest {
             .expectStatus().isBadRequest()
             .expectBody()
             .jsonPath("$.errors[0].message").isEqualTo("Invalid device configuration")
-            .jsonPath("$.errors[0].details").isEqualTo("Unknown Eaton gateway");
+            .jsonPath("$.errors[0].details").isEqualTo("Unknown Eaton gateway: garden");
     }
 }

@@ -12,6 +12,8 @@ import cloud.cholewa.home.model.SmartDeviceType;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -98,30 +100,15 @@ class EatonDeviceConfigurationServiceTest {
         verifyNoMoreInteractions(repository);
     }
 
-    @Test
-    void should_find_eaton_device_when_configuration_exists_for_lowercase_gateway() {
+    @ParameterizedTest
+    @ValueSource(strings = {"blinds", "BLINDS"})
+    void should_find_eaton_device_when_configuration_exists(final String gateway) {
         when(repository.findByPointAndGateway(anyInt(), any()))
             .thenReturn(Mono.just(EatonDeviceConfigurationEntity.builder().point(1).room(LIVING_ROOM).build()));
         when(mapper.toResponse(any()))
             .thenReturn(EatonConfigurationResponse.builder().room(LIVING_ROOM).build());
 
-        sut.get(1, "blinds")
-            .as(StepVerifier::create)
-            .expectNextCount(1)
-            .verifyComplete();
-
-        verify(repository).findByPointAndGateway(anyInt(), any());
-        verify(mapper).toResponse(any());
-    }
-
-    @Test
-    void should_find_eaton_device_when_configuration_exists_for_uppercase_gateway() {
-        when(repository.findByPointAndGateway(anyInt(), any()))
-            .thenReturn(Mono.just(EatonDeviceConfigurationEntity.builder().point(1).room(LIVING_ROOM).build()));
-        when(mapper.toResponse(any()))
-            .thenReturn(EatonConfigurationResponse.builder().room(LIVING_ROOM).build());
-
-        sut.get(1, "BLINDS")
+        sut.get(1, gateway)
             .as(StepVerifier::create)
             .expectNextCount(1)
             .verifyComplete();
@@ -141,7 +128,6 @@ class EatonDeviceConfigurationServiceTest {
             )
             .verify();
 
-        verifyNoInteractions(repository);
-        verifyNoInteractions(mapper);
+        verifyNoInteractions(repository, mapper);
     }
 }
