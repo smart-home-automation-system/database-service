@@ -10,6 +10,9 @@ import cloud.cholewa.home.model.EatonGatewayType;
 import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.SmartDeviceType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
@@ -19,9 +22,16 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+import java.util.stream.Stream;
+
+import static cloud.cholewa.home.model.EatonGatewayType.LIGHTS;
+import static cloud.cholewa.home.model.RoomName.BEDROOM;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @Import(ExceptionHandlerConfig.class)
@@ -116,5 +126,92 @@ class EatonDeviceConfigurationControllerTest {
             .expectBody()
             .jsonPath("$.errors[0].message").isEqualTo("Invalid device configuration")
             .jsonPath("$.errors[0].details").isEqualTo("Unknown Eaton gateway: garden");
+    }
+
+    @Test
+    void should_return_bad_request_when_body_missing() {
+        webTestClient.post()
+            .uri("/device/configuration/eaton")
+            .body(BodyInserters.empty())
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Missing request body");
+
+        verifyNoInteractions(eatonDeviceConfigurationService);
+    }
+
+    @Test
+    void should_return_bad_request_when_all_fields_missing() {
+        webTestClient.post()
+            .uri("/device/configuration/eaton")
+            .body(BodyInserters.fromValue(EatonDeviceConfiguration.builder().build()))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors.length()").isEqualTo(4)
+            .jsonPath("$.errors[*].details")
+            .value((List<String> details) -> assertThat(details).containsExactlyInAnyOrder(
+                "point",
+                "type",
+                "gateway",
+                "room"
+            ));
+
+        verifyNoInteractions(eatonDeviceConfigurationService);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("provideInvalidEatonDeviceConfiguration")
+    void should_return_bad_request_when_invalid_configuration(
+        final String name,
+        final EatonDeviceConfiguration invalidConfiguration,
+        final String details
+    ) {
+        webTestClient.post()
+            .uri("/device/configuration/eaton")
+            .body(BodyInserters.fromValue(invalidConfiguration))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Missing or invalid parameter")
+            .jsonPath("$.errors[0].details").isEqualTo(details);
+
+        verifyNoInteractions(eatonDeviceConfigurationService);
+    }
+
+    private static Stream<Arguments> provideInvalidEatonDeviceConfiguration() {
+        return Stream.of(
+            Arguments.of(
+                "no point",
+                EatonDeviceConfiguration.builder().type(SmartDeviceType.BLINDS).gateway(LIGHTS).room(BEDROOM).build(),
+                "point"
+            ),
+            Arguments.of(
+                "no gateway",
+                EatonDeviceConfiguration.builder().point(1).type(SmartDeviceType.BLINDS).room(BEDROOM).build(),
+                "gateway"
+            ),
+            Arguments.of(
+                "no type",
+                EatonDeviceConfiguration.builder().point(1).gateway(LIGHTS).room(BEDROOM).build(),
+                "type"
+            ),
+            Arguments.of(
+                "no room",
+                EatonDeviceConfiguration.builder().point(1).type(SmartDeviceType.BLINDS).gateway(LIGHTS).build(),
+                "room"
+            ),
+            Arguments.of(
+                "point less than 1",
+                EatonDeviceConfiguration.builder().point(0).type(SmartDeviceType.BLINDS).gateway(LIGHTS).room(BEDROOM).build(),
+                "point"
+            ),
+            Arguments.of(
+                "point greater than 99",
+                EatonDeviceConfiguration.builder().point(100).type(SmartDeviceType.BLINDS).gateway(LIGHTS).room(BEDROOM).build(),
+                "point"
+            )
+        );
     }
 }
