@@ -4,8 +4,12 @@ import cloud.cholewa.data.config.ExceptionHandlerConfig;
 import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
 import cloud.cholewa.data.error.HouseholdNotFoundException;
+import cloud.cholewa.data.error.MemberDeviceException;
+import cloud.cholewa.data.error.MemberDeviceNotFoundException;
 import cloud.cholewa.data.household.service.HouseholdMemberService;
+import cloud.cholewa.data.household.service.MemberDeviceService;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.MemberPhoneDetails;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -42,8 +46,16 @@ class HouseholdControllerTest {
     @Autowired
     private WebTestClient webTestClient;
 
+    private static final MemberPhoneDetails DEVICE = MemberPhoneDetails.builder()
+        .name("iPhone")
+        .mac("aa:bb:cc:dd:ee:ff")
+        .build();
+
     @MockitoBean
     private HouseholdMemberService householdMemberService;
+
+    @MockitoBean
+    private MemberDeviceService memberDeviceService;
 
     @Test
     void should_return_household_members() {
@@ -210,11 +222,101 @@ class HouseholdControllerTest {
     }
 
     @Test
-    void should_reject_device_with_invalid_mac() {
+    void should_add_device() {
+        when(memberDeviceService.addDevice(eq("Ola"), any())).thenReturn(Mono.just(DEVICE));
+
         webTestClient.post()
             .uri("/household/member/Ola/device")
-            .body(BodyInserters.fromValue(Map.of("name", "iPhone", "mac", "AA-BB-CC-DD-EE-FF")))
+            .body(BodyInserters.fromValue(DEVICE))
+            .exchange()
+            .expectStatus().isCreated()
+            .expectBody()
+            .jsonPath("$.name").isEqualTo("iPhone")
+            .jsonPath("$.mac").isEqualTo("aa:bb:cc:dd:ee:ff");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidDevices")
+    void should_reject_invalid_device(final String description, final Map<String, String> body) {
+        webTestClient.post()
+            .uri("/household/member/Ola/device")
+            .body(BodyInserters.fromValue(body))
             .exchange()
             .expectStatus().isBadRequest();
+
+        verifyNoInteractions(memberDeviceService);
+    }
+
+    static Stream<Arguments> invalidDevices() {
+        return Stream.of(
+            Arguments.of("MAC with dashes", Map.of("name", "iPhone", "mac", "aa-bb-cc-dd-ee-ff")),
+            Arguments.of("MAC in uppercase", Map.of("name", "iPhone", "mac", "AA:BB:CC:DD:EE:FF")),
+            Arguments.of("missing MAC", Map.of("name", "iPhone")),
+            Arguments.of("name longer than 50", Map.of("name", "a".repeat(51), "mac", "aa:bb:cc:dd:ee:ff")),
+            Arguments.of("missing name", Map.of("mac", "aa:bb:cc:dd:ee:ff"))
+        );
+    }
+
+    @Test
+    void should_return_conflict_when_device_is_registered_already() {
+        when(memberDeviceService.addDevice(eq("Ola"), any())).thenReturn(Mono.error(
+            new MemberDeviceException("Device with MAC [aa:bb:cc:dd:ee:ff] is already registered")));
+
+        webTestClient.post()
+            .uri("/household/member/Ola/device")
+            .body(BodyInserters.fromValue(DEVICE))
+            .exchange()
+            .expectStatus().isEqualTo(HttpStatus.CONFLICT)
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Member device already exists")
+            .jsonPath("$.errors[0].details").isEqualTo("Device with MAC [aa:bb:cc:dd:ee:ff] is already registered");
+    }
+
+    @Test
+    void should_remove_device() {
+        when(memberDeviceService.removeDevice("Ola", "aa:bb:cc:dd:ee:ff")).thenReturn(Mono.empty());
+
+        webTestClient.delete()
+            .uri("/household/member/Ola/device?mac=aa:bb:cc:dd:ee:ff")
+            .exchange()
+            .expectStatus().isNoContent();
+
+        verify(memberDeviceService).removeDevice("Ola", "aa:bb:cc:dd:ee:ff");
+    }
+
+    @Test
+    void should_return_not_found_when_removing_unknown_device() {
+        when(memberDeviceService.removeDevice("Ola", "aa:bb:cc:dd:ee:ff")).thenReturn(Mono.error(
+            new MemberDeviceNotFoundException("Household member [Ola] has no device with MAC [aa:bb:cc:dd:ee:ff]")));
+
+        webTestClient.delete()
+            .uri("/household/member/Ola/device?mac=aa:bb:cc:dd:ee:ff")
+            .exchange()
+            .expectStatus().isNotFound()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Member device not found");
+    }
+
+    @Test
+    void should_require_mac_when_removing_device() {
+        webTestClient.delete()
+            .uri("/household/member/Ola/device")
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        verifyNoInteractions(memberDeviceService);
+    }
+
+    @Test
+    void should_update_device() {
+        when(memberDeviceService.updateDevice(eq("Ola"), eq("aa:bb:cc:dd:ee:ff"), any())).thenReturn(Mono.just(DEVICE));
+
+        webTestClient.patch()
+            .uri("/household/member/Ola/device?mac=aa:bb:cc:dd:ee:ff")
+            .body(BodyInserters.fromValue(DEVICE))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.name").isEqualTo("iPhone");
     }
 }

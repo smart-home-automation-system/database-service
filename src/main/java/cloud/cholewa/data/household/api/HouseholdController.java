@@ -1,6 +1,7 @@
 package cloud.cholewa.data.household.api;
 
 import cloud.cholewa.data.household.service.HouseholdMemberService;
+import cloud.cholewa.data.household.service.MemberDeviceService;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import jakarta.validation.Valid;
@@ -30,6 +31,7 @@ import java.util.List;
 public class HouseholdController {
 
     private final HouseholdMemberService householdService;
+    private final MemberDeviceService memberDeviceService;
 
     @GetMapping
     Mono<ResponseEntity<List<HouseholdMember>>> getAllHouseholdMembers() {
@@ -73,24 +75,27 @@ public class HouseholdController {
     }
 
     @PostMapping("/member/{name}/device")
-    Mono<Void> addHouseholdDevice(
+    Mono<ResponseEntity<MemberPhoneDetails>> addHouseholdDevice(
         @PathVariable final String name,
         @Valid @RequestBody final MemberPhoneDetails device
     ) {
-        return Mono.empty();
+        return memberDeviceService.addDevice(name, device)
+            .map(added -> ResponseEntity.status(HttpStatus.CREATED).body(added));
     }
 
     @DeleteMapping("/member/{name}/device")
-    Mono<Void> removeHouseholdDevice(@PathVariable final String name, @RequestParam final String mac) {
-        return Mono.empty();
+    Mono<ResponseEntity<Void>> removeHouseholdDevice(@PathVariable final String name, @RequestParam final String mac) {
+        return memberDeviceService.removeDevice(name, mac)
+            .then(Mono.just(ResponseEntity.noContent().build()));
     }
 
     @PatchMapping("/member/{name}/device")
-    Mono<Void> updateHouseholdDevice(
+    Mono<ResponseEntity<MemberPhoneDetails>> updateHouseholdDevice(
         @PathVariable final String name,
         @RequestParam final String mac,
         @Valid @RequestBody final MemberPhoneDetails device
     ) {
-        return Mono.empty();
+        return memberDeviceService.updateDevice(name, mac, device)
+            .map(ResponseEntity::ok);
     }
 }

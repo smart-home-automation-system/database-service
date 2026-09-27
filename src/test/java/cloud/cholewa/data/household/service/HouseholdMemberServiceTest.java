@@ -5,9 +5,14 @@ import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
 import cloud.cholewa.data.error.HouseholdNotFoundException;
 import cloud.cholewa.data.household.mapper.HouseholdMemberMapper;
 import cloud.cholewa.data.household.mapper.HouseholdMemberMapperImpl;
+import cloud.cholewa.data.household.mapper.MemberDeviceMapper;
+import cloud.cholewa.data.household.mapper.MemberDeviceMapperImpl;
 import cloud.cholewa.data.household.model.HouseholdMemberEntity;
+import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
+import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.MemberPhoneDetails;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,6 +30,7 @@ import reactor.test.StepVerifier;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -53,6 +59,12 @@ class HouseholdMemberServiceTest {
     @Spy
     private HouseholdMemberMapper mapper = new HouseholdMemberMapperImpl();
 
+    @Mock
+    private MemberDeviceRepository deviceRepository;
+
+    @Spy
+    private MemberDeviceMapper deviceMapper = new MemberDeviceMapperImpl();
+
     @InjectMocks
     private HouseholdMemberService sut;
 
@@ -62,6 +74,7 @@ class HouseholdMemberServiceTest {
             new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "999-888-777", true),
             STORED
         ));
+        when(deviceRepository.findAll()).thenReturn(Flux.empty());
 
         sut.getAllHouseholdMembers()
             .as(StepVerifier::create)
@@ -72,8 +85,35 @@ class HouseholdMemberServiceTest {
     }
 
     @Test
+    void should_attach_devices_to_their_members() {
+        when(repository.findAll()).thenReturn(Flux.just(
+            STORED,
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "999-888-777", true)
+        ));
+        when(deviceRepository.findAll()).thenReturn(Flux.just(
+            new MemberDeviceEntity(1L, CREATED_AT, null, 7L, "iPhone", "aa:bb:cc:dd:ee:01"),
+            new MemberDeviceEntity(2L, CREATED_AT, null, 7L, "iPad", "aa:bb:cc:dd:ee:02")
+        ));
+
+        sut.getAllHouseholdMembers()
+            .as(StepVerifier::create)
+            .assertNext(members -> {
+                assertThat(members.get(0).getName()).isEqualTo("Ola");
+                assertThat(members.get(0).getDevices())
+                    .extracting(MemberPhoneDetails::getName, MemberPhoneDetails::getMac)
+                    .containsExactly(
+                        tuple("iPad", "aa:bb:cc:dd:ee:02"),
+                        tuple("iPhone", "aa:bb:cc:dd:ee:01")
+                    );
+                assertThat(members.get(1).getDevices()).isEmpty();
+            })
+            .verifyComplete();
+    }
+
+    @Test
     void should_return_error_when_there_are_no_members() {
         when(repository.findAll()).thenReturn(Flux.empty());
+        when(deviceRepository.findAll()).thenReturn(Flux.empty());
 
         sut.getAllHouseholdMembers()
             .as(StepVerifier::create)

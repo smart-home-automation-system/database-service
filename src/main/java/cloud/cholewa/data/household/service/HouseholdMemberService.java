@@ -4,15 +4,20 @@ import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
 import cloud.cholewa.data.error.HouseholdNotFoundException;
 import cloud.cholewa.data.household.mapper.HouseholdMemberMapper;
+import cloud.cholewa.data.household.mapper.MemberDeviceMapper;
 import cloud.cholewa.data.household.model.HouseholdMemberEntity;
+import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
+import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.MemberPhoneDetails;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 
@@ -26,12 +31,19 @@ public class HouseholdMemberService {
 
     private final HouseholdMemberRepository householdMemberRepository;
     private final HouseholdMemberMapper householdMemberMapper;
+    private final MemberDeviceRepository memberDeviceRepository;
+    private final MemberDeviceMapper memberDeviceMapper;
 
+    //two queries for the whole registry (about ten members) instead of one per member
     public Mono<List<HouseholdMember>> getAllHouseholdMembers() {
-        return householdMemberRepository.findAll()
-            .map(householdMemberMapper::toHouseholdMember)
-            //HouseholdMember is not Comparable - the no-arg collectSortedList() throws once there are two members
-            .collectSortedList(Comparator.comparing(HouseholdMember::getName))
+        return Mono.zip(
+                householdMemberRepository.findAll().collectList(),
+                memberDeviceRepository.findAll().collectMultimap(MemberDeviceEntity::getMemberId)
+            )
+            .map(registry -> registry.getT1().stream()
+                .map(member -> withDevices(member, registry.getT2().getOrDefault(member.getId(), List.of())))
+                .sorted(Comparator.comparing(HouseholdMember::getName))
+                .toList())
             .filter(list -> !list.isEmpty())
             .switchIfEmpty(Mono.error(new HouseholdNotFoundException("Please update household members, adding new one")));
     }
@@ -79,9 +91,18 @@ public class HouseholdMemberService {
             .map(householdMemberMapper::toHouseholdMember);
     }
 
+    private HouseholdMember withDevices(final HouseholdMemberEntity member, final Collection<MemberDeviceEntity> devices) {
+        final HouseholdMember householdMember = householdMemberMapper.toHouseholdMember(member);
+        householdMember.setDevices(devices.stream()
+            .map(memberDeviceMapper::toMemberPhoneDetails)
+            .sorted(Comparator.comparing(MemberPhoneDetails::getName))
+            .toList());
+        return householdMember;
+    }
+
     private Mono<HouseholdMemberEntity> findMember(final String name) {
         return householdMemberRepository.findByNameIgnoreCase(name)
-            .switchIfEmpty(Mono.error(new HouseholdMemberNotFoundException("No household member named [" + name + "]")));
+            .switchIfEmpty(Mono.error(HouseholdMemberNotFoundException.forName(name)));
     }
 
     //DuplicateKeyException is registered globally for the Eaton configuration, whose message would be

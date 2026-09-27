@@ -6,12 +6,16 @@ import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
 import cloud.cholewa.data.error.HouseholdNotFoundException;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
+import cloud.cholewa.data.error.MemberDeviceException;
+import cloud.cholewa.data.error.MemberDeviceNotFoundException;
 import cloud.cholewa.data.error.processor.DeviceConfigurationNotFoundExceptionProcessor;
 import cloud.cholewa.data.error.processor.DuplicateConfigurationExceptionProcessor;
 import cloud.cholewa.data.error.processor.HouseholdExceptionProcessor;
 import cloud.cholewa.data.error.processor.HouseholdMemberNotFoundExceptionProcessor;
 import cloud.cholewa.data.error.processor.HouseholdNotFoundExceptionProcessor;
 import cloud.cholewa.data.error.processor.InvalidDeviceConfigurationExceptionProcessor;
+import cloud.cholewa.data.error.processor.MemberDeviceExceptionProcessor;
+import cloud.cholewa.data.error.processor.MemberDeviceNotFoundExceptionProcessor;
 import org.springframework.boot.autoconfigure.web.WebProperties;
 import org.springframework.boot.webflux.error.ErrorAttributes;
 import org.springframework.context.ApplicationContext;
@@ -54,7 +58,9 @@ public class ExceptionHandlerConfig {
                     HouseholdMemberNotFoundException.class,
                     new HouseholdMemberNotFoundExceptionProcessor()
                 ),
-                Map.entry(HouseholdException.class, new HouseholdExceptionProcessor())
+                Map.entry(HouseholdException.class, new HouseholdExceptionProcessor()),
+                Map.entry(MemberDeviceException.class, new MemberDeviceExceptionProcessor()),
+                Map.entry(MemberDeviceNotFoundException.class, new MemberDeviceNotFoundExceptionProcessor())
             )
         );
 

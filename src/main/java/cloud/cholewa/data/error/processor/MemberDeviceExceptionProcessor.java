@@ -10,17 +10,17 @@ import org.springframework.http.HttpStatus;
 import java.util.Collections;
 
 @Slf4j
-public class HouseholdNotFoundExceptionProcessor implements ExceptionProcessor {
-    
+public class MemberDeviceExceptionProcessor implements ExceptionProcessor {
+
     @Override
     public Errors apply(final Throwable throwable) {
         log.warn("Handled [{}]: {}", throwable.getClass().getSimpleName(), throwable.getMessage());
-        
+
         return Errors.builder()
-            .httpStatus(HttpStatus.NOT_FOUND)
+            .httpStatus(HttpStatus.CONFLICT)
             .errors(Collections.singleton(
                 ErrorMessage.builder()
-                    .message(CustomErrorDescription.NOT_FOUND_ANY_HOUSEHOLDER.getDescription())
+                    .message(CustomErrorDescription.DEVICE_EXIST.getDescription())
                     .details(throwable.getMessage())
                     .build()
             ))

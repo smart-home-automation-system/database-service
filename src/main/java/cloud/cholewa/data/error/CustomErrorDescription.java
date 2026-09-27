@@ -13,7 +13,9 @@ public enum CustomErrorDescription implements ErrorId {
     UNKNOWN_GATEWAY("Unknown Eaton gateway"),
     NOT_FOUND_ANY_HOUSEHOLDER("Cannot find any householder"),
     NOT_FOUND_HOUSEHOLD_MEMBER("Household member not found"),
-    HOUSEHOLDER_EXIST("Household member already exists");
+    HOUSEHOLDER_EXIST("Household member already exists"),
+    DEVICE_EXIST("Member device already exists"),
+    NOT_FOUND_MEMBER_DEVICE("Member device not found");
 
     @Getter
     private final String description;
