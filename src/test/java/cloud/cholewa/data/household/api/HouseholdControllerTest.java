@@ -3,7 +3,6 @@ package cloud.cholewa.data.household.api;
 import cloud.cholewa.data.config.ExceptionHandlerConfig;
 import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
-import cloud.cholewa.data.error.HouseholdNotFoundException;
 import cloud.cholewa.data.error.MemberDeviceException;
 import cloud.cholewa.data.error.MemberDeviceNotFoundException;
 import cloud.cholewa.data.household.service.HouseholdMemberService;
@@ -72,16 +71,15 @@ class HouseholdControllerTest {
     }
 
     @Test
-    void should_return_not_found_when_there_are_no_members() {
-        when(householdMemberService.getAllHouseholdMembers())
-            .thenReturn(Mono.error(new HouseholdNotFoundException("test")));
+    void should_return_empty_list_when_there_are_no_members() {
+        when(householdMemberService.getAllHouseholdMembers()).thenReturn(Mono.just(List.of()));
 
         webTestClient.get()
             .uri("/household")
             .exchange()
-            .expectStatus().isNotFound()
+            .expectStatus().isOk()
             .expectBody()
-            .jsonPath("$.errors[0].message").isEqualTo("Cannot find any householder");
+            .json("[]");
     }
 
     @Test
@@ -133,7 +131,7 @@ class HouseholdControllerTest {
             .exchange()
             .expectStatus().isEqualTo(HttpStatus.CONFLICT)
             .expectBody()
-            .jsonPath("$.errors[0].message").isEqualTo("Household member already exists")
+            .jsonPath("$.errors[0].message").isEqualTo("Household member conflict")
             .jsonPath("$.errors[0].details")
             .isEqualTo("Phone number [+48111222333] is already assigned to another household member");
     }

@@ -2,6 +2,7 @@ package cloud.cholewa.data.device.eaton.api;
 
 import cloud.cholewa.data.config.ExceptionHandlerConfig;
 import cloud.cholewa.data.device.eaton.service.EatonDeviceConfigurationService;
+import cloud.cholewa.data.error.DeviceConfigurationExistsException;
 import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
 import cloud.cholewa.home.model.EatonConfigurationResponse;
@@ -16,7 +17,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -101,9 +101,9 @@ class EatonDeviceConfigurationControllerTest {
     }
 
     @Test
-    void should_return_conflict_when_configuration_violates_unique_constraint() {
+    void should_return_conflict_when_configuration_exists() {
         when(eatonDeviceConfigurationService.add(any()))
-            .thenReturn(Mono.error(new DuplicateKeyException("test")));
+            .thenReturn(Mono.error(new DeviceConfigurationExistsException("Configuration exist in database")));
 
         webTestClient.post()
             .uri("/device/configuration/eaton")

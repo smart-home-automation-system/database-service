@@ -2,7 +2,6 @@ package cloud.cholewa.data.household.service;
 
 import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
-import cloud.cholewa.data.error.HouseholdNotFoundException;
 import cloud.cholewa.data.household.mapper.HouseholdMemberMapper;
 import cloud.cholewa.data.household.mapper.HouseholdMemberMapperImpl;
 import cloud.cholewa.data.household.mapper.MemberDeviceMapper;
@@ -28,6 +27,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -44,6 +44,10 @@ class HouseholdMemberServiceTest {
 
     private static final HouseholdMemberEntity STORED = new HouseholdMemberEntity(
         7L, CREATED_AT, null, "Ola", "+48111222333", true
+    );
+
+    private static final MemberDeviceEntity DEVICE = new MemberDeviceEntity(
+        1L, CREATED_AT, null, 7L, "iPhone", "aa:bb:cc:dd:ee:01"
     );
 
     private static final HouseholdMember MEMBER = HouseholdMember.builder()
@@ -72,15 +76,17 @@ class HouseholdMemberServiceTest {
     void should_return_members_sorted_by_name() {
         when(repository.findAll()).thenReturn(Flux.just(
             new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true),
-            STORED
+            STORED,
+            new HouseholdMemberEntity(3L, CREATED_AT, null, "anna", "+48777666555", true)
         ));
         when(deviceRepository.findAll()).thenReturn(Flux.empty());
 
+        //case-insensitive, like the names themselves: "anna" is not sorted after "Zenon"
         sut.getAllHouseholdMembers()
             .as(StepVerifier::create)
             .assertNext(members -> assertThat(members)
                 .extracting(HouseholdMember::getName)
-                .containsExactly("Ola", "Zenon"))
+                .containsExactly("anna", "Ola", "Zenon"))
             .verifyComplete();
     }
 
@@ -111,14 +117,14 @@ class HouseholdMemberServiceTest {
     }
 
     @Test
-    void should_return_error_when_there_are_no_members() {
+    void should_return_empty_list_when_there_are_no_members() {
         when(repository.findAll()).thenReturn(Flux.empty());
         when(deviceRepository.findAll()).thenReturn(Flux.empty());
 
         sut.getAllHouseholdMembers()
             .as(StepVerifier::create)
-            .expectError(HouseholdNotFoundException.class)
-            .verify();
+            .assertNext(members -> assertThat(members).isEmpty())
+            .verifyComplete();
     }
 
     @Test
@@ -126,9 +132,16 @@ class HouseholdMemberServiceTest {
         when(repository.existsByNameIgnoreCase("Jan")).thenReturn(Mono.just(false));
         when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
 
-        sut.addHouseholdMember(MEMBER)
+        sut.addHouseholdMember(HouseholdMember.builder()
+                .name("Jan")
+                .phone("+48444555666")
+                .active(true)
+                .devices(List.of(MemberPhoneDetails.builder().name("iPhone").mac("aa:bb:cc:dd:ee:09").build()))
+                .build())
             .as(StepVerifier::create)
             .assertNext(added -> {
+                //devices in the payload are ignored - a new member has none yet
+                assertThat(added.getDevices()).isEmpty();
                 assertThat(added.getName()).isEqualTo("Jan");
                 assertThat(added.getPhone()).isEqualTo("+48444555666");
                 assertThat(added.getActive()).isTrue();
@@ -148,7 +161,7 @@ class HouseholdMemberServiceTest {
         sut.addHouseholdMember(MEMBER)
             .as(StepVerifier::create)
             .expectErrorMatches(throwable -> throwable instanceof HouseholdException
-                && throwable.getMessage().equals("Household member already exists"))
+                && throwable.getMessage().equals("Household member named [Jan] already exists"))
             .verify();
 
         verify(repository, never()).save(any());
@@ -171,10 +184,15 @@ class HouseholdMemberServiceTest {
     void should_update_stored_row_instead_of_inserting_a_new_one() {
         when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(STORED));
         when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.just(DEVICE));
 
         sut.updateHouseholdMember("Ola", MEMBER)
             .as(StepVerifier::create)
-            .assertNext(updated -> assertThat(updated.getName()).isEqualTo("Jan"))
+            .assertNext(updated -> {
+                assertThat(updated.getName()).isEqualTo("Jan");
+                //the response carries the member's devices, like GET does
+                assertThat(updated.getDevices()).extracting(MemberPhoneDetails::getMac).containsExactly("aa:bb:cc:dd:ee:01");
+            })
             .verifyComplete();
 
         final HouseholdMemberEntity saved = savedEntity();
@@ -191,6 +209,7 @@ class HouseholdMemberServiceTest {
         when(repository.findByNameIgnoreCase("Ola"))
             .thenReturn(Mono.just(new HouseholdMemberEntity(7L, CREATED_AT, null, "Ola", "+48111222333", false)));
         when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.empty());
 
         sut.updateHouseholdMember("Ola", MEMBER)
             .as(StepVerifier::create)
@@ -199,9 +218,9 @@ class HouseholdMemberServiceTest {
     }
 
     @Test
-    void should_report_taken_name_when_renaming_member() {
+    void should_report_taken_name_when_a_concurrent_rename_hits_the_index() {
         when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(STORED));
-        when(repository.save(any())).thenReturn(Mono.error(duplicateKey("household_members_name_uq")));
+        when(repository.save(any())).thenReturn(Mono.error(duplicateKey("household_members_name_upper_uq")));
 
         sut.updateHouseholdMember("Ola", MEMBER)
             .as(StepVerifier::create)
@@ -219,6 +238,33 @@ class HouseholdMemberServiceTest {
             .as(StepVerifier::create)
             .expectError(DuplicateKeyException.class)
             .verify();
+    }
+
+    @Test
+    void should_reject_renaming_to_another_members_name_in_different_case() {
+        //"anna" while "Anna" exists - the upper(name) index (V10) rejects it
+        when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(STORED));
+        when(repository.save(any())).thenReturn(Mono.error(duplicateKey("household_members_name_upper_uq")));
+
+        sut.updateHouseholdMember("Ola", HouseholdMember.builder().name("anna").phone("+48444555666").build())
+            .as(StepVerifier::create)
+            .expectErrorMatches(throwable -> throwable instanceof HouseholdException
+                && throwable.getMessage().equals("Household member named [anna] already exists"))
+            .verify();
+    }
+
+    @Test
+    void should_allow_changing_only_the_case_of_the_own_name() {
+        when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(STORED));
+        when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.empty());
+
+        sut.updateHouseholdMember("Ola", HouseholdMember.builder().name("OLA").phone("+48111222333").build())
+            .as(StepVerifier::create)
+            .assertNext(updated -> assertThat(updated.getName()).isEqualTo("OLA"))
+            .verifyComplete();
+
+        verify(repository, never()).existsByNameIgnoreCase(anyString());
     }
 
     @Test
@@ -263,6 +309,7 @@ class HouseholdMemberServiceTest {
     void should_change_activity_of_stored_row(final boolean active) {
         when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(STORED));
         when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.just(DEVICE));
 
         final Mono<HouseholdMember> result = active
             ? sut.activateHouseholdMember("Ola")
@@ -270,7 +317,10 @@ class HouseholdMemberServiceTest {
 
         result
             .as(StepVerifier::create)
-            .assertNext(member -> assertThat(member.getActive()).isEqualTo(active))
+            .assertNext(member -> {
+                assertThat(member.getActive()).isEqualTo(active);
+                assertThat(member.getDevices()).hasSize(1);
+            })
             .verifyComplete();
 
         final HouseholdMemberEntity saved = savedEntity();
