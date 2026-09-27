@@ -30,9 +30,10 @@ layering `api` → `service` → `repository`, with MapStruct mappers between th
   state and history itself. The API is in the README.
 
 Routing: inside the cluster callers use k8s DNS (`http://database-service:6200`).
-`api-gateway-service` routes only `/device/configuration/**` here — **`/household/**` has no
-gateway route**; add one there (a static route in `RoutesConfig`) before anything outside the
-cluster, e.g. `web-application`, needs the registry.
+`api-gateway-service` routes `/device/configuration/**` and `/household/**` here (one `database`
+route with both paths, HAS-150). A new top-level path of this service needs adding to that route,
+or it answers "No static resource" (404) from outside the cluster. Nothing on the gateway is
+authenticated — the registry's names, phones and MACs are open to whoever reaches the ingress.
 
 ## Household registry — the parts worth knowing before changing anything
 

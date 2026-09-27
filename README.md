@@ -62,8 +62,8 @@ schema is managed by **Flyway**, and the whole request path is non-blocking (Spr
 Base path `/home` (`spring.webflux.base-path`). Inside the cluster the services call it
 directly over k8s DNS (`http://database-service:6200`) — `amx-service` for the Eaton lookup
 (`internal.service.database` in its configuration). From outside, `api-gateway-service` routes
-only `/home/device/configuration/**` here; the household registry (`/home/household/**`) has
-no gateway route and is reachable inside the cluster only.
+`/home/device/configuration/**` and `/home/household/**` here — both unauthenticated, like every
+route of the gateway.
 
 | Method | Path | Description |
 |---|---|---|
