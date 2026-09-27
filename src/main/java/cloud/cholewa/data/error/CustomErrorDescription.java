@@ -10,7 +10,10 @@ public enum CustomErrorDescription implements ErrorId {
 
     CONFIGURATION_EXIST("Configuration exist in database"),
     NOT_FOUND_DEVICE_CONFIGURATION("Device configuration not found"),
-    UNKNOWN_GATEWAY("Unknown Eaton gateway");
+    UNKNOWN_GATEWAY("Unknown Eaton gateway"),
+    NOT_FOUND_ANY_HOUSEHOLDER("Cannot find any householder"),
+    NOT_FOUND_HOUSEHOLD_MEMBER("Household member not found"),
+    HOUSEHOLDER_EXIST("Household member already exists");
 
     @Getter
     private final String description;
