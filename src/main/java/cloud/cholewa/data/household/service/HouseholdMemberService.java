@@ -4,6 +4,7 @@ import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
 import cloud.cholewa.data.error.HouseholdNotFoundException;
 import cloud.cholewa.data.household.mapper.HouseholdMemberMapper;
+import cloud.cholewa.data.household.model.HouseholdMemberEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.home.model.HouseholdMember;
 import lombok.RequiredArgsConstructor;
@@ -48,14 +49,12 @@ public class HouseholdMemberService {
     }
 
     public Mono<Void> removeHouseholdMember(final String name) {
-        return householdMemberRepository.findByNameIgnoreCase(name)
-            .switchIfEmpty(Mono.error(new HouseholdMemberNotFoundException("No household member named [" + name + "]")))
+        return findMember(name)
             .flatMap(householdMemberRepository::delete);
     }
 
     public Mono<HouseholdMember> updateHouseholdMember(final String name, final HouseholdMember householdMember) {
-        return householdMemberRepository.findByNameIgnoreCase(name)
-            .switchIfEmpty(Mono.error(new HouseholdMemberNotFoundException("No household member named [" + name + "]")))
+        return findMember(name)
             //the found row's id is what makes save() an UPDATE - a fresh entity would be INSERTed
             .flatMap(existing ->
                 householdMemberRepository.save(householdMemberMapper.toUpdatedEntity(existing, householdMember)))
@@ -74,11 +73,15 @@ public class HouseholdMemberService {
     //separate operations rather than a field of the update: active defaults to true in the SDK model,
     //so an update that simply omitted it would reactivate the member
     private Mono<HouseholdMember> changeActivity(final String name, final boolean active) {
-        return householdMemberRepository.findByNameIgnoreCase(name)
-            .switchIfEmpty(Mono.error(new HouseholdMemberNotFoundException("No household member named [" + name + "]")))
+        return findMember(name)
             .map(existing -> householdMemberMapper.withActive(existing, active))
             .flatMap(householdMemberRepository::save)
             .map(householdMemberMapper::toHouseholdMember);
+    }
+
+    private Mono<HouseholdMemberEntity> findMember(final String name) {
+        return householdMemberRepository.findByNameIgnoreCase(name)
+            .switchIfEmpty(Mono.error(new HouseholdMemberNotFoundException("No household member named [" + name + "]")));
     }
 
     //DuplicateKeyException is registered globally for the Eaton configuration, whose message would be
