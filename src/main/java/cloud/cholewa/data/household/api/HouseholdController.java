@@ -60,6 +60,18 @@ public class HouseholdController {
             .map(ResponseEntity::ok);
     }
 
+    @PostMapping("/member/{name}/activate")
+    Mono<ResponseEntity<HouseholdMember>> activateHouseholdMember(@PathVariable final String name) {
+        return householdService.activateHouseholdMember(name)
+            .map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/member/{name}/deactivate")
+    Mono<ResponseEntity<HouseholdMember>> deactivateHouseholdMember(@PathVariable final String name) {
+        return householdService.deactivateHouseholdMember(name)
+            .map(ResponseEntity::ok);
+    }
+
     @PostMapping("/member/{name}/device")
     Mono<Void> addHouseholdDevice(
         @PathVariable final String name,

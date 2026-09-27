@@ -26,4 +26,12 @@ public interface HouseholdMemberMapper {
     @Mapping(target = "phone", source = "householdMember.phone")
     @Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
     HouseholdMemberEntity toUpdatedEntity(HouseholdMemberEntity existing, HouseholdMember householdMember);
+
+    @Mapping(target = "id", source = "existing.id")
+    @Mapping(target = "createdAt", source = "existing.createdAt")
+    @Mapping(target = "name", source = "existing.name")
+    @Mapping(target = "phone", source = "existing.phone")
+    @Mapping(target = "active", source = "active")
+    @Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
+    HouseholdMemberEntity withActive(HouseholdMemberEntity existing, boolean active);
 }
