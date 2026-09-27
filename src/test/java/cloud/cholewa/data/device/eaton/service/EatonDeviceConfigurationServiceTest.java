@@ -3,6 +3,7 @@ package cloud.cholewa.data.device.eaton.service;
 import cloud.cholewa.data.device.eaton.mapper.EatonDeviceConfigurationMapper;
 import cloud.cholewa.data.device.eaton.model.EatonDeviceConfigurationEntity;
 import cloud.cholewa.data.device.eaton.repository.EatonDeviceConfigurationRepository;
+import cloud.cholewa.data.error.DeviceConfigurationExistsException;
 import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
 import cloud.cholewa.home.model.EatonConfigurationResponse;
@@ -17,6 +18,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -68,12 +70,38 @@ class EatonDeviceConfigurationServiceTest {
     }
 
     @Test
+    void should_report_configuration_registered_by_a_concurrent_request() {
+        //both requests passed the existence check; the unique constraint (V7) catches the second one
+        when(repository.existsByPointAndGateway(anyInt(), any())).thenReturn(Mono.just(false));
+        when(mapper.toEntity(any())).thenReturn(EatonDeviceConfigurationEntity.builder().build());
+        when(repository.save(any())).thenReturn(Mono.error(new DuplicateKeyException(
+            "duplicate key value violates unique constraint \"eaton_devices_point_gateway_uq\"")));
+
+        sut.add(EATON_DEVICE_CONFIGURATION)
+            .as(StepVerifier::create)
+            .expectError(DeviceConfigurationExistsException.class)
+            .verify();
+    }
+
+    @Test
+    void should_pass_through_duplicate_key_of_another_constraint() {
+        when(repository.existsByPointAndGateway(anyInt(), any())).thenReturn(Mono.just(false));
+        when(mapper.toEntity(any())).thenReturn(EatonDeviceConfigurationEntity.builder().build());
+        when(repository.save(any())).thenReturn(Mono.error(new DuplicateKeyException("some_other_uq")));
+
+        sut.add(EATON_DEVICE_CONFIGURATION)
+            .as(StepVerifier::create)
+            .expectError(DuplicateKeyException.class)
+            .verify();
+    }
+
+    @Test
     void should_throw_exception_when_configuration_exists() {
         when(repository.existsByPointAndGateway(anyInt(), any())).thenReturn(Mono.just(true));
 
         sut.add(EATON_DEVICE_CONFIGURATION)
             .as(StepVerifier::create)
-            .expectErrorMatches(throwable -> throwable instanceof InvalidDeviceConfigurationException
+            .expectErrorMatches(throwable -> throwable instanceof DeviceConfigurationExistsException
                 && throwable.getMessage().equals("Configuration exist in database"))
             .verify();
 

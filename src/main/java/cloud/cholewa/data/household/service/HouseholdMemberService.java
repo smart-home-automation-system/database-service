@@ -2,7 +2,6 @@ package cloud.cholewa.data.household.service;
 
 import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
-import cloud.cholewa.data.error.HouseholdNotFoundException;
 import cloud.cholewa.data.household.mapper.HouseholdMemberMapper;
 import cloud.cholewa.data.household.mapper.MemberDeviceMapper;
 import cloud.cholewa.data.household.model.HouseholdMemberEntity;
@@ -26,7 +25,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class HouseholdMemberService {
 
-    private static final String NAME_UNIQUE_CONSTRAINT = "household_members_name_uq";
+    //a unique index on upper(name) since V10 - the violation names it like a constraint
+    private static final String NAME_UNIQUE_CONSTRAINT = "household_members_name_upper_uq";
     private static final String PHONE_UNIQUE_CONSTRAINT = "household_members_phone_uq";
 
     private final HouseholdMemberRepository householdMemberRepository;
@@ -40,24 +40,25 @@ public class HouseholdMemberService {
                 householdMemberRepository.findAll().collectList(),
                 memberDeviceRepository.findAll().collectMultimap(MemberDeviceEntity::getMemberId)
             )
+            //an empty registry is an empty list, not an error: presence-service polls it
             .map(registry -> registry.getT1().stream()
                 .map(member -> withDevices(member, registry.getT2().getOrDefault(member.getId(), List.of())))
-                .sorted(Comparator.comparing(HouseholdMember::getName))
-                .toList())
-            .filter(list -> !list.isEmpty())
-            .switchIfEmpty(Mono.error(new HouseholdNotFoundException("Please update household members, adding new one")));
+                //names are case-insensitive, so is their order: "anna" before "Zofia"
+                .sorted(Comparator.comparing(HouseholdMember::getName, String.CASE_INSENSITIVE_ORDER))
+                .toList());
     }
 
     public Mono<HouseholdMember> addHouseholdMember(final HouseholdMember householdMember) {
         return householdMemberRepository.existsByNameIgnoreCase(householdMember.getName())
             .filter(Boolean::booleanValue)
             .flatMap(exists ->
-                Mono.<HouseholdMember>error(new HouseholdException("Household member already exists")))
+                Mono.<HouseholdMember>error(nameTaken(householdMember.getName())))
             .switchIfEmpty(Mono.defer(() ->
                 Mono.just(householdMemberMapper.toEntity(householdMember))
                     .flatMap(householdMemberRepository::save)
                     .onErrorMap(DuplicateKeyException.class, e -> duplicateMember(e, householdMember))
-                    .map(householdMemberMapper::toHouseholdMember)));
+                    //a new member has no devices yet - the ones in the payload are ignored
+                    .map(saved -> withDevices(saved, List.of()))));
     }
 
     public Mono<Void> removeHouseholdMember(final String name) {
@@ -71,7 +72,7 @@ public class HouseholdMemberService {
             .flatMap(existing ->
                 householdMemberRepository.save(householdMemberMapper.toUpdatedEntity(existing, householdMember)))
             .onErrorMap(DuplicateKeyException.class, e -> duplicateMember(e, householdMember))
-            .map(householdMemberMapper::toHouseholdMember);
+            .flatMap(this::withStoredDevices);
     }
 
     public Mono<HouseholdMember> activateHouseholdMember(final String name) {
@@ -88,7 +89,7 @@ public class HouseholdMemberService {
         return findMember(name)
             .map(existing -> householdMemberMapper.withActive(existing, active))
             .flatMap(householdMemberRepository::save)
-            .map(householdMemberMapper::toHouseholdMember);
+            .flatMap(this::withStoredDevices);
     }
 
     private HouseholdMember withDevices(final HouseholdMemberEntity member, final Collection<MemberDeviceEntity> devices) {
@@ -100,13 +101,27 @@ public class HouseholdMemberService {
         return householdMember;
     }
 
+    //responses of member operations carry the member's devices, like GET /household does - a client
+    //replacing its cached member with the response must not lose them
+    private Mono<HouseholdMember> withStoredDevices(final HouseholdMemberEntity member) {
+        return memberDeviceRepository.findAllByMemberId(member.getId())
+            .collectList()
+            .map(devices -> withDevices(member, devices));
+    }
+
+    private static HouseholdException nameTaken(final String name) {
+        return new HouseholdException("Household member named [" + name + "] already exists");
+    }
+
     private Mono<HouseholdMemberEntity> findMember(final String name) {
         return householdMemberRepository.findByNameIgnoreCase(name)
             .switchIfEmpty(Mono.error(HouseholdMemberNotFoundException.forName(name)));
     }
 
-    //DuplicateKeyException is registered globally for the Eaton configuration, whose message would be
-    //misleading here - the violated constraint tells which household field clashed
+    //no service-wide mapping of DuplicateKeyException exists (the cholewa-commons default would answer a
+    //bare "Duplicate Key") - the violated constraint tells which household field clashed. A rename to
+    //another member's name in any letter case hits the upper(name) index (V10); changing only the case of
+    //the member's own name updates the same row and cannot clash
     private static Throwable duplicateMember(final DuplicateKeyException exception, final HouseholdMember householdMember) {
         final String message = String.valueOf(exception.getMessage());
 
@@ -115,7 +130,7 @@ public class HouseholdMemberService {
                 "Phone number [" + householdMember.getPhone() + "] is already assigned to another household member");
         }
         if (message.contains(NAME_UNIQUE_CONSTRAINT)) {
-            return new HouseholdException("Household member named [" + householdMember.getName() + "] already exists");
+            return nameTaken(householdMember.getName());
         }
         return exception;
     }

@@ -20,7 +20,7 @@ public class HouseholdExceptionProcessor implements ExceptionProcessor {
             .httpStatus(HttpStatus.CONFLICT)
             .errors(Collections.singleton(
                 ErrorMessage.builder()
-                    .message(CustomErrorDescription.HOUSEHOLDER_EXIST.getDescription())
+                    .message(CustomErrorDescription.HOUSEHOLD_CONFLICT.getDescription())
                     .details(throwable.getMessage())
                     .build()
             ))

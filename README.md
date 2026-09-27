@@ -82,12 +82,12 @@ formatting it for display is up to the client) and
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/home/household` | All members sorted by name, each with its `devices`. `404 Not Found` while the registry is empty. |
-| `POST` | `/home/household/member` | Register a member (`HouseholdMember`; `devices` in the body are ignored). Always created active. `201 Created`; `409 Conflict` when the name or the phone is taken. |
-| `PATCH` | `/home/household/member/{name}` | Change a member's name and phone. Keeps the member's activity — `active` in the body is ignored. `200 OK`; `404` for an unknown member; `409` when the new name or phone is taken. |
+| `GET` | `/home/household` | All members sorted by name, each with its `devices`. `200 OK` with `[]` while the registry is empty. |
+| `POST` | `/home/household/member` | Register a member (`HouseholdMember`; `devices` in the body are ignored). Always created active. `201 Created`; `409 Conflict` when the name (in any letter case — `anna` clashes with `Anna`) or the phone is taken. |
+| `PATCH` | `/home/household/member/{name}` | Change a member's name and phone. Keeps the member's activity — `active` in the body is ignored. `200 OK` with the member and their devices; `404` for an unknown member; `409` when the new name (in any letter case) or phone belongs to another member — changing only the case of the own name is fine. |
 | `DELETE` | `/home/household/member/{name}` | Remove a member together with their devices. `204 No Content`; `404` for an unknown member. |
-| `POST` | `/home/household/member/{name}/activate` | Mark a member active. `200 OK` with the member; `404` for an unknown member. |
-| `POST` | `/home/household/member/{name}/deactivate` | Mark a member inactive, e.g. while away for longer. `200 OK` with the member; `404` for an unknown member. |
+| `POST` | `/home/household/member/{name}/activate` | Mark a member active. `200 OK` with the member and their devices; `404` for an unknown member. |
+| `POST` | `/home/household/member/{name}/deactivate` | Mark a member inactive, e.g. while away for longer. `200 OK` with the member and their devices; `404` for an unknown member. |
 | `POST` | `/home/household/member/{name}/device` | Register a device of the member (`MemberPhoneDetails`). `201 Created`; `404` for an unknown member; `409` when the MAC is already registered or the member already has a device of that name. |
 | `PATCH` | `/home/household/member/{name}/device?mac=<mac>` | Change the name and MAC of the member's device. `200 OK`; `404` for an unknown member or device; `409` as above. |
 | `DELETE` | `/home/household/member/{name}/device?mac=<mac>` | Remove the member's device. `204 No Content`; `404` for an unknown member or device. |
@@ -124,7 +124,8 @@ come back in the shared `Errors` JSON contract.
   is additionally checked to be within `1..99`, the range an Eaton gateway addresses.
   A duplicate pair surfaces as `409` and an out-of-range `point` as `400`, not `500` —
   see the API table.
-- **Household registry** (`V8`, `V9`): `household_members` (`name` and `phone` unique, phone
+- **Household registry** (`V8`–`V10`): `household_members` (`name` unique ignoring letter case
+  since `V10`, `phone` unique, phone
   checked to be E.164 since `V9` — `V8` stored `xxx-xxx-xxx` and `V9` converted the existing
   numbers to `+48…`; `active` defaulting to true) and `member_devices` (`mac` unique across the whole
   registry and format-checked, device `name` unique per member, `member_id` with

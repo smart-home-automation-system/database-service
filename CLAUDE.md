@@ -58,14 +58,27 @@ cluster, e.g. `web-application`, needs the registry.
 - **Column defaults never apply.** Spring Data R2DBC writes every column of an entity, nulls
   included, so `DEFAULT TRUE` on `active` or a missing `created_at` do not help — the mappers set
   both.
-- **Duplicates are mapped by constraint name.** `DuplicateKeyException` is registered globally
-  (`ExceptionHandlerConfig`) for the Eaton configuration (409 "Device configuration already
-  exists"). The household services catch it first and turn it into `HouseholdException` /
-  `MemberDeviceException` (409) based on the constraint in the driver message
-  (`household_members_name_uq`, `household_members_phone_uq`, `member_devices_mac_uq`,
-  `member_devices_member_name_uq`). **Renaming a constraint in a migration breaks this mapping**
-  — the unknown constraint falls through to the Eaton message. The constants live in the
-  services.
+- **Duplicates are mapped by constraint name, per service.** No global processor for
+  `DuplicateKeyException` (there was one for the Eaton message until HAS-150, and it leaked that
+  message into every other duplicate): each service maps its own duplicates to a domain exception
+  (409) — Eaton → `DeviceConfigurationExistsException` (the existence check and the
+  `eaton_devices_point_gateway_uq` constraint of V7 give the same 409), household →
+  `HouseholdException` / `MemberDeviceException` by the constraint in the driver message
+  (`household_members_name_upper_uq`, `household_members_phone_uq`,
+  `member_devices_mac_uq`, `member_devices_member_name_uq`). **Renaming a constraint or index in a
+  migration breaks this mapping** — an unknown one falls through to the `cholewa-commons` default
+  (409 "Duplicate Key", no details). The constants live in the services.
+- **Names are unique ignoring letter case** (V10, a unique index on `upper(name)`): lookups are
+  `...IgnoreCase`, and a case-sensitive `UNIQUE (name)` once let `anna` sit next to `Anna`, after
+  which every lookup of the name found two rows and failed with 500. **`upper`, not `lower`** —
+  Spring Data's `...IgnoreCase` compares `UPPER(name) = UPPER(?)`, and the two functions disagree
+  for some letters. A rename to another member's name hits the index and is mapped to the 409;
+  changing only the case of the own name updates the same row. There is no Java-side copy of the
+  rule on PATCH on purpose — the index is the single definition. Names sort case-insensitively.
+- **Member responses carry the member's devices** (POST/PATCH/activate/deactivate, like GET), so a
+  client replacing its cached member with a response does not lose them; devices in a member
+  payload are ignored — they are managed through the device endpoints.
+- **An empty registry is `200 []`**, not 404 — `presence-service` polls it.
 - `GET /household` reads the whole registry in two queries (members + all devices, grouped by
   `memberId`) — fine for ~10 members, no paging by design. `HouseholdMember` is not
   `Comparable`: sort with an explicit comparator (the no-arg `collectSortedList()` threw
