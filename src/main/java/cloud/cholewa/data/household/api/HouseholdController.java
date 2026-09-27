@@ -1,9 +1,8 @@
 package cloud.cholewa.data.household.api;
 
-import cloud.cholewa.data.household.api.model.HouseholdRequest;
-import cloud.cholewa.data.household.api.model.HouseholdResponse;
 import cloud.cholewa.data.household.service.HouseholdMemberService;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.MemberPhoneDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +21,8 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 
+//members are addressed by name and their devices by MAC address - both are unique in the database,
+//so the API needs no surrogate id that a client would first have to look up
 @Slf4j
 @RestController
 @RequiredArgsConstructor
@@ -37,40 +38,47 @@ public class HouseholdController {
     }
 
     @PostMapping("/member")
-    Mono<ResponseEntity<HouseholdResponse>> addHouseholdMember(
-        @Valid @RequestBody final HouseholdRequest householdRequest
+    Mono<ResponseEntity<HouseholdMember>> addHouseholdMember(
+        @Valid @RequestBody final HouseholdMember householdMember
     ) {
-        return householdService.addHouseholdMember(householdRequest)
-            .map(householdMember -> ResponseEntity.status(HttpStatus.CREATED).body(householdMember));
+        return householdService.addHouseholdMember(householdMember)
+            .map(added -> ResponseEntity.status(HttpStatus.CREATED).body(added));
     }
 
-    @DeleteMapping("/member")
-    Mono<ResponseEntity<Void>> removeHouseholdMember(@RequestParam final String name) {
+    @DeleteMapping("/member/{name}")
+    Mono<ResponseEntity<Void>> removeHouseholdMember(@PathVariable final String name) {
         return householdService.removeHouseholdMember(name)
             .then(Mono.just(ResponseEntity.noContent().build()));
     }
 
-    @PatchMapping("/member")
+    @PatchMapping("/member/{name}")
     Mono<ResponseEntity<HouseholdMember>> updateHouseholdMember(
-        @RequestParam final String name,
-        @Valid @RequestBody final HouseholdRequest householdRequest
+        @PathVariable final String name,
+        @Valid @RequestBody final HouseholdMember householdMember
     ) {
-        return householdService.updateHouseholdMember(name, householdRequest)
+        return householdService.updateHouseholdMember(name, householdMember)
             .map(ResponseEntity::ok);
     }
 
-    @PostMapping("/member/{memberId}/device")
-    Mono<Void> addHouseholdDevice(@PathVariable String memberId) {
+    @PostMapping("/member/{name}/device")
+    Mono<Void> addHouseholdDevice(
+        @PathVariable final String name,
+        @Valid @RequestBody final MemberPhoneDetails device
+    ) {
         return Mono.empty();
     }
 
-    @DeleteMapping("/member/{memberId}/device")
-    Mono<Void> removeHouseholdDevice(@PathVariable String memberId) {
+    @DeleteMapping("/member/{name}/device")
+    Mono<Void> removeHouseholdDevice(@PathVariable final String name, @RequestParam final String mac) {
         return Mono.empty();
     }
 
-    @PatchMapping("/member/{memberId}/device")
-    Mono<Void> updateHouseholdDevices(@PathVariable String memberId) {
+    @PatchMapping("/member/{name}/device")
+    Mono<Void> updateHouseholdDevice(
+        @PathVariable final String name,
+        @RequestParam final String mac,
+        @Valid @RequestBody final MemberPhoneDetails device
+    ) {
         return Mono.empty();
     }
 }
