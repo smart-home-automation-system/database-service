@@ -39,10 +39,14 @@ cluster, e.g. `web-application`, needs the registry.
 - **Addressing by natural keys.** Members by `name`, devices by `mac` — both unique in the
   schema. No surrogate id is exposed; the SDK models have none. Keep it that way rather than
   adding ids a client would first have to look up.
-- **Bodies are the SDK models** `HouseholdMember` / `MemberPhoneDetails` (smart-home-sdk ≥ 1.2.0)
-  with `@Valid`: name 3–50, phone `xxx-xxx-xxx`, device name ≤ 50, MAC lowercase and
-  colon-separated. The same bounds are in the schema (`V8`); change them in the SDK and in a new
-  migration together. The `mac` **query parameter** is lowercased before the lookup; the body
+- **Bodies are the SDK models** `HouseholdMember` / `MemberPhoneDetails` (smart-home-sdk ≥ 1.3.0)
+  with `@Valid`: name 3–50, phone E.164 (`+48505602702`), device name ≤ 50, MAC lowercase and
+  colon-separated. The same bounds are in the schema (`V8`, phone since `V9`); change them in the
+  SDK and in a new migration together.
+- **The phone is an SMS recipient** (SMSAPI, smsapi.pl), hence E.164 without any formatting —
+  display formatting is the client's job. SMSAPI's `to` takes `48505602702` or `505602702` and
+  does not document a leading `+`: whoever sends the SMS strips the `+`, the registry keeps the
+  standard form. The `mac` **query parameter** is lowercased before the lookup; the body
   is not normalised — the SDK pattern rejects uppercase.
 - **Updates must keep the stored row's id.** `R2dbcRepository.save()` INSERTs an entity with a
   null id; the `toUpdatedEntity(existing, …)` / `withActive(existing, …)` mappers copy `id`,

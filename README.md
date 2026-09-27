@@ -74,7 +74,9 @@ no gateway route and is reachable inside the cluster only.
 
 Members are addressed by **name** and their devices by **MAC address**: both are unique in
 the database, so a client never has to look up a surrogate id. Bodies are the
-`smart-home-sdk` models `HouseholdMember` (name 3–50 characters, phone `xxx-xxx-xxx`) and
+`smart-home-sdk` models `HouseholdMember` (name 3–50 characters, phone in the international
+**E.164** format without spaces or dashes, e.g. `+48505602702` — it is an SMS recipient, and
+formatting it for display is up to the client) and
 `MemberPhoneDetails` (name up to 50 characters, MAC lowercase and colon-separated, e.g.
 `aa:bb:cc:dd:ee:ff`); a body breaking those rules returns `400 Bad Request`.
 
@@ -122,8 +124,9 @@ come back in the shared `Errors` JSON contract.
   is additionally checked to be within `1..99`, the range an Eaton gateway addresses.
   A duplicate pair surfaces as `409` and an out-of-range `point` as `400`, not `500` —
   see the API table.
-- **Household registry** (`V8`): `household_members` (`name` and `phone` unique, phone format
-  checked, `active` defaulting to true) and `member_devices` (`mac` unique across the whole
+- **Household registry** (`V8`, `V9`): `household_members` (`name` and `phone` unique, phone
+  checked to be E.164 since `V9` — `V8` stored `xxx-xxx-xxx` and `V9` converted the existing
+  numbers to `+48…`; `active` defaulting to true) and `member_devices` (`mac` unique across the whole
   registry and format-checked, device `name` unique per member, `member_id` with
   `ON DELETE CASCADE`). The `active` and `created_at` defaults are set in the mappers, not
   left to the column defaults: Spring Data R2DBC writes every column of an entity, nulls

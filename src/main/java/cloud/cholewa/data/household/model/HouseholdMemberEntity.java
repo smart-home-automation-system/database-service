@@ -26,8 +26,9 @@ public class HouseholdMemberEntity {
     String name;
 
     @NotNull
-    @Size(min = 11, max = 11)
-    @Pattern(regexp = "^[0-9]{3}-[0-9]{3}-[0-9]{3}$")
+    //E.164, as the SMS recipient it is used for (V9)
+    @Size(max = 16)
+    @Pattern(regexp = "^\\+[1-9][0-9]{7,14}$")
     String phone;
     
     boolean active;

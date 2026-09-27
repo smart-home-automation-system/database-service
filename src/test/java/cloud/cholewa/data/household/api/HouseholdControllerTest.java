@@ -39,7 +39,7 @@ class HouseholdControllerTest {
 
     private static final HouseholdMember MEMBER = HouseholdMember.builder()
         .name("Ola")
-        .phone("111-222-333")
+        .phone("+48111222333")
         .active(true)
         .build();
 
@@ -67,7 +67,7 @@ class HouseholdControllerTest {
             .expectStatus().isOk()
             .expectBody()
             .jsonPath("$[0].name").isEqualTo("Ola")
-            .jsonPath("$[0].phone").isEqualTo("111-222-333")
+            .jsonPath("$[0].phone").isEqualTo("+48111222333")
             .jsonPath("$[0].active").isEqualTo(true);
     }
 
@@ -90,7 +90,7 @@ class HouseholdControllerTest {
 
         webTestClient.post()
             .uri("/household/member")
-            .body(BodyInserters.fromValue(Map.of("name", "Ola", "phone", "111-222-333")))
+            .body(BodyInserters.fromValue(Map.of("name", "Ola", "phone", "+48111222333")))
             .exchange()
             .expectStatus().isCreated()
             .expectBody()
@@ -111,10 +111,13 @@ class HouseholdControllerTest {
 
     static Stream<Arguments> invalidMembers() {
         return Stream.of(
-            Arguments.of("name shorter than 3", Map.of("name", "Al", "phone", "111-222-333")),
-            Arguments.of("name longer than 50", Map.of("name", "a".repeat(51), "phone", "111-222-333")),
-            Arguments.of("missing name", Map.of("phone", "111-222-333")),
-            Arguments.of("phone in a wrong format", Map.of("name", "Ola", "phone", "111222333")),
+            Arguments.of("name shorter than 3", Map.of("name", "Al", "phone", "+48111222333")),
+            Arguments.of("name longer than 50", Map.of("name", "a".repeat(51), "phone", "+48111222333")),
+            Arguments.of("missing name", Map.of("phone", "+48111222333")),
+            Arguments.of("phone without country code", Map.of("name", "Ola", "phone", "111222333")),
+            Arguments.of("phone with dashes", Map.of("name", "Ola", "phone", "+48-111-222-333")),
+            Arguments.of("phone with spaces", Map.of("name", "Ola", "phone", "+48 111 222 333")),
+            Arguments.of("phone longer than E.164", Map.of("name", "Ola", "phone", "+4811122233344455")),
             Arguments.of("missing phone", Map.of("name", "Ola"))
         );
     }
@@ -122,7 +125,7 @@ class HouseholdControllerTest {
     @Test
     void should_return_conflict_when_member_clashes_with_existing_one() {
         when(householdMemberService.addHouseholdMember(any())).thenReturn(Mono.error(
-            new HouseholdException("Phone number [111-222-333] is already assigned to another household member")));
+            new HouseholdException("Phone number [+48111222333] is already assigned to another household member")));
 
         webTestClient.post()
             .uri("/household/member")
@@ -132,7 +135,7 @@ class HouseholdControllerTest {
             .expectBody()
             .jsonPath("$.errors[0].message").isEqualTo("Household member already exists")
             .jsonPath("$.errors[0].details")
-            .isEqualTo("Phone number [111-222-333] is already assigned to another household member");
+            .isEqualTo("Phone number [+48111222333] is already assigned to another household member");
     }
 
     @Test
@@ -178,7 +181,7 @@ class HouseholdControllerTest {
     void should_reject_invalid_update() {
         webTestClient.patch()
             .uri("/household/member/Ola")
-            .body(BodyInserters.fromValue(Map.of("name", "Al", "phone", "111-222-333")))
+            .body(BodyInserters.fromValue(Map.of("name", "Al", "phone", "+48111222333")))
             .exchange()
             .expectStatus().isBadRequest();
 
@@ -200,7 +203,7 @@ class HouseholdControllerTest {
     @Test
     void should_deactivate_member() {
         when(householdMemberService.deactivateHouseholdMember("Ola"))
-            .thenReturn(Mono.just(HouseholdMember.builder().name("Ola").phone("111-222-333").active(false).build()));
+            .thenReturn(Mono.just(HouseholdMember.builder().name("Ola").phone("+48111222333").active(false).build()));
 
         webTestClient.post()
             .uri("/household/member/Ola/deactivate")

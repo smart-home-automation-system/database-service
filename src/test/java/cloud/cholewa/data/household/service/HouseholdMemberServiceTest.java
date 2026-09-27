@@ -43,12 +43,12 @@ class HouseholdMemberServiceTest {
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 8, 15, 12, 0);
 
     private static final HouseholdMemberEntity STORED = new HouseholdMemberEntity(
-        7L, CREATED_AT, null, "Ola", "111-222-333", true
+        7L, CREATED_AT, null, "Ola", "+48111222333", true
     );
 
     private static final HouseholdMember MEMBER = HouseholdMember.builder()
         .name("Jan")
-        .phone("444-555-666")
+        .phone("+48444555666")
         .active(true)
         .build();
 
@@ -71,7 +71,7 @@ class HouseholdMemberServiceTest {
     @Test
     void should_return_members_sorted_by_name() {
         when(repository.findAll()).thenReturn(Flux.just(
-            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "999-888-777", true),
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true),
             STORED
         ));
         when(deviceRepository.findAll()).thenReturn(Flux.empty());
@@ -88,7 +88,7 @@ class HouseholdMemberServiceTest {
     void should_attach_devices_to_their_members() {
         when(repository.findAll()).thenReturn(Flux.just(
             STORED,
-            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "999-888-777", true)
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true)
         ));
         when(deviceRepository.findAll()).thenReturn(Flux.just(
             new MemberDeviceEntity(1L, CREATED_AT, null, 7L, "iPhone", "aa:bb:cc:dd:ee:01"),
@@ -130,7 +130,7 @@ class HouseholdMemberServiceTest {
             .as(StepVerifier::create)
             .assertNext(added -> {
                 assertThat(added.getName()).isEqualTo("Jan");
-                assertThat(added.getPhone()).isEqualTo("444-555-666");
+                assertThat(added.getPhone()).isEqualTo("+48444555666");
                 assertThat(added.getActive()).isTrue();
             })
             .verifyComplete();
@@ -163,7 +163,7 @@ class HouseholdMemberServiceTest {
             .as(StepVerifier::create)
             .expectErrorMatches(throwable -> throwable instanceof HouseholdException
                 && throwable.getMessage()
-                .equals("Phone number [444-555-666] is already assigned to another household member"))
+                .equals("Phone number [+48444555666] is already assigned to another household member"))
             .verify();
     }
 
@@ -182,14 +182,14 @@ class HouseholdMemberServiceTest {
         assertThat(saved.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(saved.getUpdatedAt()).isNotNull();
         assertThat(saved.getName()).isEqualTo("Jan");
-        assertThat(saved.getPhone()).isEqualTo("444-555-666");
+        assertThat(saved.getPhone()).isEqualTo("+48444555666");
         assertThat(saved.isActive()).isTrue();
     }
 
     @Test
     void should_keep_member_inactive_when_updating_without_active() {
         when(repository.findByNameIgnoreCase("Ola"))
-            .thenReturn(Mono.just(new HouseholdMemberEntity(7L, CREATED_AT, null, "Ola", "111-222-333", false)));
+            .thenReturn(Mono.just(new HouseholdMemberEntity(7L, CREATED_AT, null, "Ola", "+48111222333", false)));
         when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
 
         sut.updateHouseholdMember("Ola", MEMBER)
