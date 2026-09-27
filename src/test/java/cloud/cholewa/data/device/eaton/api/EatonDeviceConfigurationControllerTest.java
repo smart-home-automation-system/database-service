@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
@@ -100,7 +101,7 @@ class EatonDeviceConfigurationControllerTest {
     }
 
     @Test
-    void should_return_bad_request_when_configuration_violates_unique_constraint() {
+    void should_return_conflict_when_configuration_violates_unique_constraint() {
         when(eatonDeviceConfigurationService.add(any()))
             .thenReturn(Mono.error(new DuplicateKeyException("test")));
 
@@ -108,9 +109,9 @@ class EatonDeviceConfigurationControllerTest {
             .uri("/device/configuration/eaton")
             .body(BodyInserters.fromValue(EATON_DEVICE_CONFIGURATION))
             .exchange()
-            .expectStatus().isBadRequest()
+            .expectStatus().isEqualTo(HttpStatus.CONFLICT)
             .expectBody()
-            .jsonPath("$.errors[0].message").isEqualTo("Invalid device configuration")
+            .jsonPath("$.errors[0].message").isEqualTo("Device configuration already exists")
             .jsonPath("$.errors[0].details").isEqualTo("Configuration exist in database");
     }
 

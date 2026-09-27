@@ -10,18 +10,18 @@ import org.springframework.http.HttpStatus;
 import java.util.Collections;
 
 @Slf4j
-public class DuplicateConfigurationExceptionProcessor implements ExceptionProcessor {
+public class MemberDeviceNotFoundExceptionProcessor implements ExceptionProcessor {
 
     @Override
     public Errors apply(final Throwable throwable) {
         log.warn("Handled [{}]: {}", throwable.getClass().getSimpleName(), throwable.getMessage());
 
         return Errors.builder()
-            .httpStatus(HttpStatus.CONFLICT)
+            .httpStatus(HttpStatus.NOT_FOUND)
             .errors(Collections.singleton(
                 ErrorMessage.builder()
-                    .message("Device configuration already exists")
-                    .details(CustomErrorDescription.CONFIGURATION_EXIST.getDescription())
+                    .message(CustomErrorDescription.NOT_FOUND_MEMBER_DEVICE.getDescription())
+                    .details(throwable.getMessage())
                     .build()
             ))
             .build();
