@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.1.0</version>
+		<version>4.1.1</version>
 		<relativePath/>
 		<!-- lookup parent from a repository -->
 	</parent>
@@ -26,8 +26,7 @@
 		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
 		<sonar.exclusions>**/model/**/*</sonar.exclusions>
 
-		<apiguardian.version>1.1.2</apiguardian.version>
-		<logbook.version>4.0.4</logbook.version>
+		<logbook.version>4.2.0</logbook.version>
 		<mapstruct.version>1.6.3</mapstruct.version>
 
 		<!--  internal dependencies versions-->
@@ -41,17 +40,6 @@
 		<versions-maven-plugin.version>2.21.0</versions-maven-plugin.version>
 	</properties>
 
-	<dependencyManagement>
-		<dependencies>
-			<!-- logbook 4.0.4 pulls 1.1.1, JUnit 6 pulls 1.1.2; pinned so dependencyConvergence
-			     passes without excluding the annotations javac needs to read logbook's class files -->
-			<dependency>
-				<groupId>org.apiguardian</groupId>
-				<artifactId>apiguardian-api</artifactId>
-				<version>${apiguardian.version}</version>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
 	<dependencies>
 		<!--  internal dependencies versions-->
 		<dependency>

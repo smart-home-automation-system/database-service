@@ -2,7 +2,7 @@
 
 `cloud.cholewa:database-service` — the **persistence facade** of the smart home: the other
 services never talk to PostgreSQL themselves, they call this one over REST. Reactive (WebFlux,
-Spring Data R2DBC), Flyway for the schema. Java 21, Spring Boot 4.1.0
+Spring Data R2DBC), Flyway for the schema. Java 21, Spring Boot 4.1.1
 (`spring-boot-starter-parent`), Maven. Local port **6005** (management **8005**); in the deployed
 `home` profile **6200** with Actuator on **8200**, where the probes and the Prometheus scrape go.
 Docker image `magikabdul/database-service`; the pom keeps `0.0.1-SNAPSHOT`, the released version
@@ -86,6 +86,34 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   `ClassCastException` with two members).
 - Deleting a member cascades to its devices in the database (`ON DELETE CASCADE`), not in code.
 
+## Eaton configuration — query parameters are validated too
+
+`GET /device/configuration/eaton` rejects a `point` outside 1..99 with 400 (HAS-145); before, the
+query ran, could not match and answered 404 — a bad request presented as a missing configuration.
+
+- **The constraints sit on the method parameter and need nothing else — no `@Validated` on the
+  class.** Since Spring Framework 6.1 WebFlux validates a constrained `@RequestParam` /
+  `@PathVariable` itself and raises `HandlerMethodValidationException`. The task (and the first
+  version) put `@Validated` on the controller: that switches the built-in validation **off** in
+  favour of an AOP proxy answering `ConstraintViolationException`, validates the `@Valid` body
+  of the POST a second time, and puts the Java method name into the answer
+  (`getEatonDeviceConfiguration.point: …`). Both paths were run in the slice to tell them apart.
+- **`InvalidRequestParameterProcessor`** (registered for `HandlerMethodValidationException`)
+  turns it into 400 `Invalid request parameter` with the violated constraints' messages as
+  `details`; the `cholewa-commons` default would answer a bare "Validation failure". A candidate
+  for `cholewa-commons` once a second service needs it.
+- **Write the message on the constraint** (`message = EatonDataPoint.OUT_OF_RANGE`). Bean
+  Validation's own text follows the JVM's default locale — Polish on a developer machine,
+  something else in the cluster — so the same request would read differently and a test could
+  not assert it.
+- The range is `EatonDataPoint.MIN` / `MAX`, and it is stated in three more places code here
+  cannot share a constant with: the CHECK of `V7`, the SDK schema (`eaton.yaml`, the bounds of
+  the POST body) and `amx-service` (`MessageUtilities.extractDataPoint`). Change all four
+  together.
+- `amx-service` is not affected: it rejects a data point outside 1..99 itself
+  (`MessageUtilities.extractDataPoint`) before it ever asks. Relevant because it relays only a
+  404 and turns any other 4xx from here into a 502 logged at ERROR.
+
 ## Error handling
 
 `ExceptionHandlerConfig` registers `cholewa-commons`' `GlobalErrorExceptionHandler` with one
@@ -98,7 +126,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 - Connection and pool come from `cholewa-commons` (≥ 1.5.0, `database.*` group); this service
   pins only `database.pool.max-size: 6`, its share of the 22 connections the managed database
-  allows (heating 8 / database 6 / water 4). Since 1.5.0 the pool validates every connection on
+  allows (heating 4 / database 6 / water 4 / presence 2). Since 1.5.0 the pool validates every connection on
   acquire — that is what recovers from the hung connection of the 2026-09-26 outage; do not
   replace the library's `ConnectionFactory` with an own bean.
 - Flyway runs on startup in `home`/`local`, disabled in `test`. Migrations are append-only:
@@ -117,8 +145,9 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 ## Build, tests & gotchas
 
 - `mvn verify` (JDK 21). `tidy-maven-plugin:check` runs in `verify`, so after editing the pom run
-  `mvn tidy:pom`. The enforcer's `dependencyConvergence` is on — `apiguardian-api` is pinned in
-  `<dependencyManagement>` because logbook and JUnit 6 disagree; do not exclude it instead.
+  `mvn tidy:pom`. The enforcer's `dependencyConvergence` is on. The `apiguardian-api` pin in
+  `<dependencyManagement>` is gone since logbook 4.2.0 (with Boot 4.1.1, HAS-145), which
+  declares the version JUnit 6 does; should the two disagree again, pin it — do not exclude it.
 - logbook needs the optional `spring-boot-http-client` module on Boot 4.1 (already declared).
 - Mockito runs as an explicit `-javaagent` in the surefire `argLine`, with **`@{argLine}` first**
   so JaCoCo's agent from the Sonar workflow survives — dropping it zeroes the coverage and fails

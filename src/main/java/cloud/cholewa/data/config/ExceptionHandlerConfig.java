@@ -13,6 +13,7 @@ import cloud.cholewa.data.error.processor.DeviceConfigurationExistsExceptionProc
 import cloud.cholewa.data.error.processor.HouseholdExceptionProcessor;
 import cloud.cholewa.data.error.processor.HouseholdMemberNotFoundExceptionProcessor;
 import cloud.cholewa.data.error.processor.InvalidDeviceConfigurationExceptionProcessor;
+import cloud.cholewa.data.error.processor.InvalidRequestParameterProcessor;
 import cloud.cholewa.data.error.processor.MemberDeviceExceptionProcessor;
 import cloud.cholewa.data.error.processor.MemberDeviceNotFoundExceptionProcessor;
 import org.springframework.boot.autoconfigure.web.WebProperties;
@@ -22,6 +23,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.codec.ServerCodecConfigurer;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.util.Map;
 
@@ -59,7 +61,10 @@ public class ExceptionHandlerConfig {
                 ),
                 Map.entry(HouseholdException.class, new HouseholdExceptionProcessor()),
                 Map.entry(MemberDeviceException.class, new MemberDeviceExceptionProcessor()),
-                Map.entry(MemberDeviceNotFoundException.class, new MemberDeviceNotFoundExceptionProcessor())
+                Map.entry(MemberDeviceNotFoundException.class, new MemberDeviceNotFoundExceptionProcessor()),
+                //constraints on query parameters and path variables; without it the cholewa-commons
+                //default answers a bare "Validation failure"
+                Map.entry(HandlerMethodValidationException.class, new InvalidRequestParameterProcessor())
             )
         );
 

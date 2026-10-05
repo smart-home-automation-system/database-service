@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
@@ -87,6 +88,47 @@ class EatonDeviceConfigurationControllerTest {
             .exchange()
             .expectStatus().isOk()
             .expectBody(EatonConfigurationResponse.class);
+    }
+
+    //the edges of the range the schema allows (V7): both are valid points and reach the service
+    @ParameterizedTest
+    @ValueSource(ints = {1, 99})
+    void should_look_up_a_point_at_the_edge_of_the_range(final int point) {
+        when(eatonDeviceConfigurationService.get(point, "blinds"))
+            .thenReturn(Mono.just(EatonConfigurationResponse.builder().build()));
+
+        webTestClient.get()
+            .uri("/device/configuration/eaton?point={point}&gateway=blinds", point)
+            .exchange()
+            .expectStatus().isOk();
+    }
+
+    //a point no row can have is a bad request, not a missing configuration: without the check the
+    //query runs, matches nothing and the caller is told 404
+    @ParameterizedTest
+    @ValueSource(ints = {0, 100, -1, 500})
+    void should_reject_a_point_outside_the_range(final int point) {
+        webTestClient.get()
+            .uri("/device/configuration/eaton?point={point}&gateway=blinds", point)
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            //the text is written on the constraint, so it is the same on every JVM and names the
+            //parameter - which also tells this 400 from any other
+            .jsonPath("$.errors[0].message").isEqualTo("Invalid request parameter")
+            .jsonPath("$.errors[0].details").isEqualTo("point must be between 1 and 99");
+
+        verifyNoInteractions(eatonDeviceConfigurationService);
+    }
+
+    @Test
+    void should_reject_a_point_that_is_not_a_number() {
+        webTestClient.get()
+            .uri("/device/configuration/eaton?point=abc&gateway=blinds")
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        verifyNoInteractions(eatonDeviceConfigurationService);
     }
 
     @Test
