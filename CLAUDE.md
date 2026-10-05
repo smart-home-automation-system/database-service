@@ -102,10 +102,15 @@ query ran, could not match and answered 404 — a bad request presented as a mis
   turns it into 400 `Invalid request parameter` with the violated constraints' messages as
   `details`; the `cholewa-commons` default would answer a bare "Validation failure". A candidate
   for `cholewa-commons` once a second service needs it.
-- **Write the message on the constraint** (`message = EatonDataPoint.OUT_OF_RANGE`). Bean
-  Validation's own text follows the JVM's default locale — Polish on a developer machine,
-  something else in the cluster — so the same request would read differently and a test could
-  not assert it.
+- **Error messages are English, always** — a rule, not a preference. Bean Validation words a
+  violated constraint in the locale of the JVM or the request: Polish on a developer machine,
+  English in the cluster (`en_US`). `ValidationMessagesConfig` replaces the message
+  interpolator with one that ignores the locale; `ValidationMessagesConfigTest` makes the JVM
+  Polish and expects English, and shows the Polish wording without the configuration. It has to
+  be a `ValidationConfigurationCustomizer`: Spring installs its own locale-aware interpolator
+  and runs the customizers after it. A message that names the parameter is still worth writing
+  on the constraint (`message = EatonDataPoint.OUT_OF_RANGE`) — the default says only "must be
+  less than or equal to 99".
 - The range is `EatonDataPoint.MIN` / `MAX`, and it is stated in three more places code here
   cannot share a constant with: the CHECK of `V7`, the SDK schema (`eaton.yaml`, the bounds of
   the POST body) and `amx-service` (`MessageUtilities.extractDataPoint`). Change all four
