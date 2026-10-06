@@ -14,7 +14,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -23,7 +22,7 @@ public class EatonDeviceConfigurationService {
     private static final String POINT_GATEWAY_UNIQUE_CONSTRAINT = "eaton_devices_point_gateway_uq";
     //the details of the two error responses; what they are errors of is named by the processor
     private static final String ALREADY_REGISTERED = "Configuration exist in database";
-    private static final String UNKNOWN_GATEWAY = "Unknown Eaton gateway: ";
+    private static final String UNKNOWN_GATEWAY_DETAILS = "Unknown Eaton gateway: ";
 
     private final EatonDeviceConfigurationRepository repository;
     private final EatonDeviceConfigurationMapper mapper;
@@ -46,7 +45,7 @@ public class EatonDeviceConfigurationService {
         return Mono.fromCallable(() -> EatonGatewayType.fromValue(gateway))
             .onErrorMap(
                 IllegalArgumentException.class,
-                e -> new InvalidDeviceConfigurationException(UNKNOWN_GATEWAY + gateway)
+                e -> new InvalidDeviceConfigurationException(UNKNOWN_GATEWAY_DETAILS + gateway)
             )
             .flatMap(gatewayType -> repository.findByPointAndGateway(dataPoint, gatewayType))
             .doOnNext(eatonConfiguration ->

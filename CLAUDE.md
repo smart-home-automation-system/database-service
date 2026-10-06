@@ -127,7 +127,8 @@ query ran, could not match and answered 404 — a bad request presented as a mis
 `ExceptionHandlerConfig` registers `cholewa-commons`' `GlobalErrorExceptionHandler` with **one
 line per domain exception**: `new DomainExceptionProcessor(status, CustomErrorDescription)`
 (HAS-175; seven near-identical processor classes before). The response is `message` = the
-constant's description, `details` = the exception message, `code` = the constant's **name**
+constant's description, `details` = the exception message (left out for a 5xx, whose message
+is internal — it goes to the log with the stack trace instead), `code` = the constant's **name**
 (`ErrorId.codeOf`, `cholewa-commons` ≥ 1.7.0). Convention: **4xx logged at WARN, 5xx at
 ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR feeds the Grafana
 "Error log spike" rule for nothing. Not-found messages for members come from
