@@ -150,12 +150,12 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 - Connection and pool come from `cholewa-commons` (≥ 1.5.0, `database.*` group); this service
   pins only `database.pool.max-size: 4`, its share of the 22 connections the managed database
-  allows (heating 4 / database 4 / water 4 / presence 2 = 14). It was 6 up to and including 0.8.0 (HAS-169):
+  allows (heating 2 / database 4 / water 2 / presence 2 = 10). It was 6 up to and including 0.8.0 (HAS-169):
   the Deployment rolls, so during a rollout the old and the new pod each hold a pool and Flyway
   adds one JDBC connection that no `r2dbc_pool_*` metric shows — 16 + 6 + 1 = 23 in the worst
-  case. With 4 the rollout of any **one** service stays at 19; two rollouts at once are not
-  covered, so deploy the database-backed services one at a time. Raising the pool means
-  re-doing that sum. What it costs: in the 15 days Prometheus keeps, scrapes saw at most 2
+  case. With the new split the rollout of this service stays at 10 + 4 + 1 = 15, and even
+  the three rolling services at once at 21 (`presence-service` uses `Recreate`). Raising any
+  pool means re-doing that sum. What it costs: in the 15 days Prometheus keeps, scrapes saw at most 2
   connections in use, but on four days short bursts grew the pool to 6 — with 4 such a burst
   waits for a connection (`max-acquire-time`) instead of opening one, and `amx-service` gives
   up on its lookup after 5 s. If `r2dbc_pool_pending_connections` starts showing in normal
