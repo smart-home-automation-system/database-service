@@ -149,8 +149,13 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 ## Database & Flyway
 
 - Connection and pool come from `cholewa-commons` (≥ 1.5.0, `database.*` group); this service
-  pins only `database.pool.max-size: 6`, its share of the 22 connections the managed database
-  allows (heating 4 / database 6 / water 4 / presence 2). Since 1.5.0 the pool validates every connection on
+  pins only `database.pool.max-size: 4`, its share of the 22 connections the managed database
+  allows (heating 4 / database 4 / water 4 / presence 2 = 14). It was 6 until 0.8.0 (HAS-169):
+  the Deployment rolls, so during a rollout the old and the new pod each hold a pool and Flyway
+  adds one JDBC connection that no `r2dbc_pool_*` metric shows — 16 + 6 + 1 = 23 in the worst
+  case. With 4 the rollout of any **one** service stays at 19; two rollouts at once are not
+  covered, so deploy the database-backed services one at a time. Raising the pool means
+  re-doing that sum. Since 1.5.0 the pool validates every connection on
   acquire — that is what recovers from the hung connection of the 2026-09-26 outage; do not
   replace the library's `ConnectionFactory` with an own bean.
 - Flyway runs on startup in `home`/`local`, disabled in `test`. Migrations are append-only:

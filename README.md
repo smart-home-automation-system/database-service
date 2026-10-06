@@ -47,9 +47,10 @@ schema is managed by **Flyway**, and the whole request path is non-blocking (Spr
   `database.*` prefix that `cholewa-commons` consumes — the library builds the pooled
   `ConnectionFactory`, this service declares no `DbConfig` of its own. They have placeholder
   defaults and the pool does not open connections eagerly, so the context starts without them
-  and fails on the first query instead. Only `database.pool.max-size: 6` is pinned here, as
-  this service's share of the 22 backend connections the managed database allows; the rest of
-  the pool settings come from the library defaults.
+  and fails on the first query instead. Only `database.pool.max-size: 4` is pinned here, as
+  this service's share of the 22 backend connections the managed database allows — sized so
+  that a rollout, when the old and the new pod each hold a pool, still fits the budget; the
+  rest of the pool settings come from the library defaults.
 - Flyway derives its JDBC URL from those same properties
   (`jdbc:postgresql://<database-host>:<database-port>/<database-name>`, defaulting to
   `localhost:5432`), so a local run needs no extra flag. Override with `--flyway-url=...`
