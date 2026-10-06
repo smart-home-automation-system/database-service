@@ -24,10 +24,11 @@ database:
   password: ${database-password:dummyPassword}
   pool:
     # this service's share of the 22 backend connections the managed database allows
-    # (heating 4 / database 4 / water 4 / presence 2, 8 free). 6 until 0.8.0: a rollout starts
-    # the new pod next to the old one, so its pool counts twice and Flyway opens one more
-    # connection over JDBC - 16 + 6 + 1 = 23 with every pool full. With 4 a rollout of any one
-    # service stays at 19 (HAS-169); in 15 days of metrics at most 2 connections were in use
+    # (heating 4 / database 4 / water 4 / presence 2, 8 free). 6 up to and including 0.8.0: a
+    # rollout starts the new pod next to the old one, so the pool counts twice and Flyway opens
+    # one more connection over JDBC - 23 with every pool full, 19 with this value (HAS-169).
+    # The price: short bursts did grow the old pool to 6, and now wait for a connection
+    # instead. Not to be dropped as "equal to the library default" - the default may change
     max-size: 4
 
 server:
