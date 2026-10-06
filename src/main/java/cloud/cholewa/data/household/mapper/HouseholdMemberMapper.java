@@ -14,7 +14,7 @@ public interface HouseholdMemberMapper {
     //devices are managed through their own endpoints, never through the member payload
     @Mapping(target = "active", constant = "true")
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "createdAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneOffset.systemDefault()))")
+    @Mapping(target = "createdAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
     @Mapping(target = "updatedAt", ignore = true)
     HouseholdMemberEntity toEntity(HouseholdMember householdMember);
 

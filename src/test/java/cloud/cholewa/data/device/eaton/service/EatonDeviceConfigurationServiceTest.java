@@ -22,7 +22,6 @@ import org.springframework.dao.DuplicateKeyException;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import static cloud.cholewa.data.error.CustomErrorDescription.UNKNOWN_GATEWAY;
 import static cloud.cholewa.home.model.EatonGatewayType.BLINDS;
 import static cloud.cholewa.home.model.EatonGatewayType.LIGHTS;
 import static cloud.cholewa.home.model.RoomName.LIVING_ROOM;
@@ -152,7 +151,7 @@ class EatonDeviceConfigurationServiceTest {
             .expectErrorSatisfies(throwable ->
                 Assertions.assertThat(throwable)
                     .isInstanceOf(InvalidDeviceConfigurationException.class)
-                    .hasMessageContaining(UNKNOWN_GATEWAY.getDescription() + ": garden")
+                    .hasMessage("Unknown Eaton gateway: garden")
             )
             .verify();
 

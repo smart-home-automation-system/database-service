@@ -104,11 +104,14 @@ query ran, could not match and answered 404 — a bad request presented as a mis
   for `cholewa-commons` once a second service needs it.
 - **Error messages are English, always** — a rule, not a preference. Bean Validation words a
   violated constraint in the locale of the JVM or the request: Polish on a developer machine,
-  English in the cluster (`en_US`). `ValidationMessagesConfig` replaces the message
-  interpolator with one that ignores the locale; `ValidationMessagesConfigTest` makes the JVM
-  Polish and expects English, and shows the Polish wording without the configuration. It has to
-  be a `ValidationConfigurationCustomizer`: Spring installs its own locale-aware interpolator
-  and runs the customizers after it. A message that names the parameter is still worth writing
+  English in the cluster (`en_US`). The service has no code for it: `cholewa-commons` pins the
+  messages (`ValidationMessagesAutoConfiguration`, ≥ 1.6.0), and the local
+  `ValidationMessagesConfig` was deleted with the bump (HAS-175) — it ran after the library's
+  customizer and put back an older variant, so do not bring it back. `ValidationMessagesTest`
+  starts the whole context on a Polish JVM and expects English; it is a `@SpringBootTest` on
+  purpose, a `@WebFluxTest` slice does not load the library's auto-configuration (so a
+  default constraint message asserted in a controller slice would still follow the locale of
+  the machine). A message that names the parameter is still worth writing
   on the constraint (`message = EatonDataPoint.OUT_OF_RANGE`) — the default says only "must be
   less than or equal to 99".
 - The range is `EatonDataPoint.MIN` / `MAX`, and it is stated in three more places code here
@@ -121,11 +124,26 @@ query ran, could not match and answered 404 — a bad request presented as a mis
 
 ## Error handling
 
-`ExceptionHandlerConfig` registers `cholewa-commons`' `GlobalErrorExceptionHandler` with one
-processor per domain exception (`error/processor/`). Convention: **4xx logged at WARN, 5xx at
+`ExceptionHandlerConfig` registers `cholewa-commons`' `GlobalErrorExceptionHandler` with **one
+line per domain exception**: `new DomainExceptionProcessor(status, CustomErrorDescription)`
+(HAS-175; seven near-identical processor classes before). The response is `message` = the
+constant's description, `details` = the exception message, `code` = the constant's **name**
+(`ErrorId.codeOf`, `cholewa-commons` ≥ 1.7.0). Convention: **4xx logged at WARN, 5xx at
 ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR feeds the Grafana
 "Error log spike" rule for nothing. Not-found messages for members come from
 `HouseholdMemberNotFoundException.forName(name)`, one place for both services.
+
+- **The names of `CustomErrorDescription` are wire contract.** A caller branches on the code:
+  `amx-service` relays a 404 to the AMX controller only with `NOT_FOUND_DEVICE_CONFIGURATION`
+  (HAS-176). Renaming a constant compiles and passes every other test, so
+  `CustomErrorDescriptionTest` writes the names out — when it fails, the change is a breaking
+  one, to be made with the callers. The descriptions are free to reword.
+- **A new domain exception** is a constant, an exception class and one map entry — no
+  processor class. Only causes get a code: `InvalidRequestParameterProcessor` and the
+  `cholewa-commons` built-ins (validation, missing body, unknown duplicate) answer without one.
+- The description of a constant is the response's `message`, so it says what kind of error it
+  is; the specifics (`Unknown Eaton gateway: garden`) are the exception message, worded in the
+  service that throws it.
 
 ## Database & Flyway
 
