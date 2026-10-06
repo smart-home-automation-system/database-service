@@ -149,8 +149,18 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 ## Database & Flyway
 
 - Connection and pool come from `cholewa-commons` (≥ 1.5.0, `database.*` group); this service
-  pins only `database.pool.max-size: 6`, its share of the 22 connections the managed database
-  allows (heating 4 / database 6 / water 4 / presence 2). Since 1.5.0 the pool validates every connection on
+  pins only `database.pool.max-size: 4`, its share of the 22 connections the managed database
+  allows (heating 2 / database 4 / water 2 / presence 2 = 10). It was 6 up to and including 0.8.0 (HAS-169):
+  the Deployment rolls, so during a rollout the old and the new pod each hold a pool and Flyway
+  adds one JDBC connection that no `r2dbc_pool_*` metric shows — 16 + 6 + 1 = 23 in the worst
+  case. With the new split the rollout of this service stays at 10 + 4 + 1 = 15, and even
+  the three rolling services at once at 21 (`presence-service` uses `Recreate`). Raising any
+  pool means re-doing that sum. What it costs: in the 15 days Prometheus keeps, scrapes saw at most 2
+  connections in use, but on four days short bursts grew the pool to 6 — with 4 such a burst
+  waits for a connection (`max-acquire-time`) instead of opening one, and `amx-service` gives
+  up on its lookup after 5 s. If `r2dbc_pool_pending_connections` starts showing in normal
+  operation, the answer is `Recreate` on the Deployment and the old size, not a bigger pool
+  alone. The line stays even though 4 equals the library default — the default may change. Since 1.5.0 the pool validates every connection on
   acquire — that is what recovers from the hung connection of the 2026-09-26 outage; do not
   replace the library's `ConnectionFactory` with an own bean.
 - Flyway runs on startup in `home`/`local`, disabled in `test`. Migrations are append-only:
