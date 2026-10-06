@@ -133,7 +133,8 @@ class HouseholdControllerTest {
             .expectBody()
             .jsonPath("$.errors[0].message").isEqualTo("Household member conflict")
             .jsonPath("$.errors[0].details")
-            .isEqualTo("Phone number [+48111222333] is already assigned to another household member");
+            .isEqualTo("Phone number [+48111222333] is already assigned to another household member")
+            .jsonPath("$.errors[0].code").isEqualTo("HOUSEHOLD_CONFLICT");
     }
 
     @Test
@@ -159,7 +160,8 @@ class HouseholdControllerTest {
             .expectStatus().isNotFound()
             .expectBody()
             .jsonPath("$.errors[0].message").isEqualTo("Household member not found")
-            .jsonPath("$.errors[0].details").isEqualTo("No household member named [Nobody]");
+            .jsonPath("$.errors[0].details").isEqualTo("No household member named [Nobody]")
+            .jsonPath("$.errors[0].code").isEqualTo("NOT_FOUND_HOUSEHOLD_MEMBER");
     }
 
     @Test
@@ -270,7 +272,8 @@ class HouseholdControllerTest {
             .expectStatus().isEqualTo(HttpStatus.CONFLICT)
             .expectBody()
             .jsonPath("$.errors[0].message").isEqualTo("Member device already exists")
-            .jsonPath("$.errors[0].details").isEqualTo("Device with MAC [aa:bb:cc:dd:ee:ff] is already registered");
+            .jsonPath("$.errors[0].details").isEqualTo("Device with MAC [aa:bb:cc:dd:ee:ff] is already registered")
+            .jsonPath("$.errors[0].code").isEqualTo("DEVICE_EXIST");
     }
 
     @Test
@@ -295,7 +298,8 @@ class HouseholdControllerTest {
             .exchange()
             .expectStatus().isNotFound()
             .expectBody()
-            .jsonPath("$.errors[0].message").isEqualTo("Member device not found");
+            .jsonPath("$.errors[0].message").isEqualTo("Member device not found")
+            .jsonPath("$.errors[0].code").isEqualTo("NOT_FOUND_MEMBER_DEVICE");
     }
 
     @Test

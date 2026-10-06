@@ -116,7 +116,9 @@ class EatonDeviceConfigurationControllerTest {
             //the text is written on the constraint, so it is the same on every JVM and names the
             //parameter - which also tells this 400 from any other
             .jsonPath("$.errors[0].message").isEqualTo("Invalid request parameter")
-            .jsonPath("$.errors[0].details").isEqualTo("point must be between 1 and 99");
+            .jsonPath("$.errors[0].details").isEqualTo("point must be between 1 and 99")
+            //a code names a domain cause; a rejected parameter is none
+            .jsonPath("$.errors[0].code").doesNotExist();
 
         verifyNoInteractions(eatonDeviceConfigurationService);
     }
@@ -139,7 +141,11 @@ class EatonDeviceConfigurationControllerTest {
         webTestClient.get()
             .uri("/device/configuration/eaton?point=1&gateway=blinds")
             .exchange()
-            .expectStatus().isNotFound();
+            .expectStatus().isNotFound()
+            .expectBody()
+            //the code is what tells "no such configuration" from a 404 of the routing: amx-service
+            //relays the 404 to the AMX controller only when it carries this one
+            .jsonPath("$.errors[0].code").isEqualTo("NOT_FOUND_DEVICE_CONFIGURATION");
     }
 
     @Test
@@ -154,7 +160,8 @@ class EatonDeviceConfigurationControllerTest {
             .expectStatus().isEqualTo(HttpStatus.CONFLICT)
             .expectBody()
             .jsonPath("$.errors[0].message").isEqualTo("Device configuration already exists")
-            .jsonPath("$.errors[0].details").isEqualTo("Configuration exist in database");
+            .jsonPath("$.errors[0].details").isEqualTo("Configuration exist in database")
+            .jsonPath("$.errors[0].code").isEqualTo("CONFIGURATION_EXIST");
     }
 
     @Test
@@ -168,7 +175,8 @@ class EatonDeviceConfigurationControllerTest {
             .expectStatus().isBadRequest()
             .expectBody()
             .jsonPath("$.errors[0].message").isEqualTo("Invalid device configuration")
-            .jsonPath("$.errors[0].details").isEqualTo("Unknown Eaton gateway: garden");
+            .jsonPath("$.errors[0].details").isEqualTo("Unknown Eaton gateway: garden")
+            .jsonPath("$.errors[0].code").isEqualTo("UNKNOWN_GATEWAY");
     }
 
     @Test

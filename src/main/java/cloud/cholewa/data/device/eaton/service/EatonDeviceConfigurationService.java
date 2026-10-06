@@ -14,15 +14,15 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import static cloud.cholewa.data.error.CustomErrorDescription.CONFIGURATION_EXIST;
-import static cloud.cholewa.data.error.CustomErrorDescription.UNKNOWN_GATEWAY;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class EatonDeviceConfigurationService {
 
     private static final String POINT_GATEWAY_UNIQUE_CONSTRAINT = "eaton_devices_point_gateway_uq";
+    //the details of the two error responses; what they are errors of is named by the processor
+    private static final String ALREADY_REGISTERED = "Configuration exist in database";
+    private static final String UNKNOWN_GATEWAY_DETAILS = "Unknown Eaton gateway: ";
 
     private final EatonDeviceConfigurationRepository repository;
     private final EatonDeviceConfigurationMapper mapper;
@@ -32,12 +32,12 @@ public class EatonDeviceConfigurationService {
     public Mono<Void> add(final EatonDeviceConfiguration deviceConfiguration) {
         return repository.existsByPointAndGateway(deviceConfiguration.getPoint(), deviceConfiguration.getGateway())
             .flatMap(exists -> exists
-                ? Mono.error(() -> new DeviceConfigurationExistsException(CONFIGURATION_EXIST.getDescription()))
+                ? Mono.error(() -> new DeviceConfigurationExistsException(ALREADY_REGISTERED))
                 : repository.save(mapper.toEntity(deviceConfiguration)).then()
             )
             .onErrorMap(
                 e -> e instanceof DuplicateKeyException && String.valueOf(e.getMessage()).contains(POINT_GATEWAY_UNIQUE_CONSTRAINT),
-                e -> new DeviceConfigurationExistsException(CONFIGURATION_EXIST.getDescription())
+                e -> new DeviceConfigurationExistsException(ALREADY_REGISTERED)
             );
     }
 
@@ -45,7 +45,7 @@ public class EatonDeviceConfigurationService {
         return Mono.fromCallable(() -> EatonGatewayType.fromValue(gateway))
             .onErrorMap(
                 IllegalArgumentException.class,
-                e -> new InvalidDeviceConfigurationException(UNKNOWN_GATEWAY.getDescription() + ": " + gateway)
+                e -> new InvalidDeviceConfigurationException(UNKNOWN_GATEWAY_DETAILS + gateway)
             )
             .flatMap(gatewayType -> repository.findByPointAndGateway(dataPoint, gatewayType))
             .doOnNext(eatonConfiguration ->

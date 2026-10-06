@@ -110,7 +110,29 @@ Forgetting and re-joining the network can give the phone a new address — updat
 then (`PATCH …/device?mac=<old>`).
 
 Errors are rendered through `cholewa-commons`' `GlobalErrorExceptionHandler`, so failures
-come back in the shared `Errors` JSON contract.
+come back in the shared `Errors` JSON contract. An error of the domain also carries a `code` —
+a stable name of the cause, for a caller that has to tell errors apart without parsing text:
+
+```json
+{ "errors": [ { "message": "Device configuration not found",
+                "details": "Device not found for point: 7 on gateway: blinds",
+                "code": "NOT_FOUND_DEVICE_CONFIGURATION" } ] }
+```
+
+| `code` | Status | When |
+|---|---|---|
+| `NOT_FOUND_DEVICE_CONFIGURATION` | 404 | no Eaton configuration for the point + gateway |
+| `CONFIGURATION_EXIST` | 409 | a configuration is already registered for the point + gateway |
+| `UNKNOWN_GATEWAY` | 400 | `gateway` is not one of the known values |
+| `NOT_FOUND_HOUSEHOLD_MEMBER` | 404 | no member of that name |
+| `HOUSEHOLD_CONFLICT` | 409 | the name or the phone belongs to another member |
+| `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
+| `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
+
+The codes are API: a caller may branch on them, so they do not change without their callers.
+`message` and `details` are for people and may be reworded. Every other error — a rejected
+body or parameter, an unknown path, an unexpected failure — has no `code`, which is how a 404
+of the routing differs from "no such record".
 
 # Database
 
