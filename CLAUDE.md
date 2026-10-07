@@ -58,12 +58,13 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **`active` is changed only through `/activate` and `/deactivate`.** It defaults to `true` in
   the SDK model, so if PATCH honoured it, an update that just omitted the field would reactivate
   the member. PATCH keeps the stored value.
-- **Role and rooms** (HAS-192, `V11`) — what the web dashboard shows a member. Three rules,
-  each the answer to a way an update could change something nobody asked for:
+- **Role and rooms** (HAS-192, `V11`) — what the web dashboard shows a member:
   - **`role` is `null` when not sent** (the SDK model has no default, on purpose). `POST`
-    without one stores `RESIDENT` (the mapper's `defaultValue`); `PATCH` without one — or with
-    an explicit `null` — keeps the stored role. Never give the role a default anywhere on the
-    way in: an update of the phone alone would then turn an admin into a resident.
+    without one stores `RESIDENT`; `PATCH` without one — or with an explicit `null` — keeps
+    the stored role. Both are decided in **`HouseholdMemberMapper`** (`defaultValue` in
+    `toEntity`, the expression in `toUpdatedEntity`) and nowhere else. Never give the role a
+    default anywhere on the way in: an update of the phone alone would then turn an admin into
+    a resident.
   - **The rooms are replaced only through `PUT /member/{name}/rooms`.** The SDK model starts
     `rooms` as an empty list, so "not sent" and "none" look the same; `PATCH` therefore ignores
     them, exactly as it ignores `active`. `POST` takes the rooms of a new member.
@@ -77,8 +78,22 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     (no code). Verified in the controller slice, which uses the real Jackson.
   - Stored as the **constant names** (`ADMIN`, `LIVING_ROOM`), like the enums of
     `eaton_devices`; the API speaks the SDK values (`admin`, `living room`). `rooms` is a
-    PostgreSQL **array column** mapped to `List<RoomName>` — Spring Data R2DBC converts both
-    ways, an empty list is `{}`. A response leaves an empty `rooms` out (`NON_EMPTY`).
+    PostgreSQL **array column** (`TEXT[]`) mapped to `List<RoomName>` — Spring Data R2DBC
+    converts both ways, an empty list is `{}`. A response leaves an empty `rooms` out
+    (`NON_EMPTY`). **No test covers that mapping**: every service test mocks the repository,
+    so it is checked by the migration rehearsal (see Database & Flyway) and by the first calls
+    after a deploy — repeat one of the two after a Spring Boot bump.
+  - **A constant renamed or removed in the SDK breaks reading**: a row still holding the old
+    name cannot be converted, and `GET /household` then fails for the whole registry (the same
+    holds for `room`, `type` and `gateway` of `eaton_devices`). Such an SDK change comes with
+    a migration of the rows here.
+  - **Every write is the whole row.** `save()` writes all columns from what was read a moment
+    before, so two requests for the same member running at once — `PATCH` and `PUT …/rooms`
+    fired together by a form — can undo each other, and both answer 200. No version column
+    guards it (one admin, a handful of edits a year); a client sends the calls **one after
+    the other**. True of `PATCH` next to activate / deactivate as well.
+  - `PATCH` **ignores** `rooms` in its body without checking them, as it ignores `active` and
+    `devices` — a refusal would break a client that sends back the member it read.
 - **Column defaults never apply.** Spring Data R2DBC writes every column of an entity, nulls
   included, so `DEFAULT TRUE` on `active`, `DEFAULT 'RESIDENT'` on `role` or a missing
   `created_at` do not help — the mappers set them. (The default of `role` did its one job in

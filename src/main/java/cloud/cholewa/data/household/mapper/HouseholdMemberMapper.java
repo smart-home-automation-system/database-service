@@ -15,18 +15,21 @@ public interface HouseholdMemberMapper {
     HouseholdMember toHouseholdMember(HouseholdMemberEntity entity);
 
     //devices are managed through their own endpoints, never through the member payload.
-    //A member added without a role is a resident: the SDK model has no default on purpose (a missing
-    //role means "not sent"), and the default of the column never applies - every column is written
+    //THE place where a missing role becomes a resident: the SDK model has no default on purpose (a
+    //missing role means "not sent"), and the default of the column never applies - every column is
+    //written. The rooms are the list the service has checked, not the one in the payload
     @Mapping(target = "active", constant = "true")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
     @Mapping(target = "updatedAt", ignore = true)
-    @Mapping(target = "role", source = "role", defaultValue = "RESIDENT")
-    @Mapping(target = "rooms", source = "rooms", defaultExpression = "java(java.util.List.of())")
-    HouseholdMemberEntity toEntity(HouseholdMember householdMember);
+    @Mapping(target = "name", source = "householdMember.name")
+    @Mapping(target = "phone", source = "householdMember.phone")
+    @Mapping(target = "role", source = "householdMember.role", defaultValue = "RESIDENT")
+    @Mapping(target = "rooms", source = "rooms")
+    HouseholdMemberEntity toEntity(HouseholdMember householdMember, List<RoomName> rooms);
 
     //keeps the identity, creation time, activity and rooms of the stored row; name and phone change,
-    //and the role only when the update names one - an update of the phone alone must not turn an
+    //and the role only when the update names one (THE place where a missing role means "keep it") - an update of the phone alone must not turn an
     //admin into a resident. The rooms have an operation of their own, like the activity: the model
     //cannot tell "no rooms sent" from "no rooms", so honouring them here would clear them
     @Mapping(target = "id", source = "existing.id")

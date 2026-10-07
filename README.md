@@ -99,6 +99,9 @@ Since 0.9.0 a member also has a **role** (`admin` or `resident`) and **rooms** (
 - Each of the three things an update could change by accident has an operation of its own:
   `active` (activate / deactivate), the rooms (`PUT …/rooms`) and the devices. `PATCH` changes
   the name, the phone and — only when the body names one — the role.
+- Send the changes of one member **one after the other**: each call writes the whole member
+  from what it read a moment before, so a `PATCH` and a `PUT …/rooms` running at the same
+  time can undo each other.
 
 | Method | Path | Description |
 |---|---|---|
@@ -183,7 +186,7 @@ does not know: the value fails while the body is read, and the answer is a `400`
   included, so a column default would never apply.
 - **Role and rooms** (`V11`): `household_members.role` (`ADMIN` / `RESIDENT`, checked; the
   column default `RESIDENT` is what made every member registered before a resident) and
-  `household_members.rooms`, an **array column** holding the `RoomName` constants in display
+  `household_members.rooms`, an **array column** (`TEXT[]`) holding the `RoomName` constants in display
   order — the rooms of a member are only ever read and replaced as a whole. The schema refuses
   a `NULL` among them; that a room is listed once is checked by the service, which can say so
   in its answer.

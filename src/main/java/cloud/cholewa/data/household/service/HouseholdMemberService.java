@@ -20,7 +20,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
@@ -53,18 +53,19 @@ public class HouseholdMemberService {
     }
 
     public Mono<HouseholdMember> addHouseholdMember(final HouseholdMember householdMember) {
-        return checkedRooms(householdMember.getRooms())
-            //deferred: a refused list of rooms must not even build the query
-            .then(Mono.defer(() -> householdMemberRepository.existsByNameIgnoreCase(householdMember.getName())))
-            .filter(Boolean::booleanValue)
-            .flatMap(exists ->
-                Mono.<HouseholdMember>error(nameTaken(householdMember.getName())))
-            .switchIfEmpty(Mono.defer(() ->
-                Mono.just(householdMemberMapper.toEntity(householdMember))
-                    .flatMap(householdMemberRepository::save)
-                    .onErrorMap(DuplicateKeyException.class, e -> duplicateMember(e, householdMember))
-                    //a new member has no devices yet - the ones in the payload are ignored
-                    .map(saved -> withDevices(saved, List.of()))));
+        //the rooms first: a refused list runs no query. What is stored is the checked list, the same
+        //one a replacement of the rooms stores - not a second reading of the payload
+        return Mono.fromCallable(() -> checkedRooms(householdMember.getRooms()))
+            .flatMap(rooms -> householdMemberRepository.existsByNameIgnoreCase(householdMember.getName())
+                .filter(Boolean::booleanValue)
+                .flatMap(exists ->
+                    Mono.<HouseholdMember>error(nameTaken(householdMember.getName())))
+                .switchIfEmpty(Mono.defer(() ->
+                    Mono.just(householdMemberMapper.toEntity(householdMember, rooms))
+                        .flatMap(householdMemberRepository::save)
+                        .onErrorMap(DuplicateKeyException.class, e -> duplicateMember(e, householdMember))
+                        //a new member has no devices yet - the ones in the payload are ignored
+                        .map(saved -> withDevices(saved, List.of())))));
     }
 
     public Mono<Void> removeHouseholdMember(final String name) {
@@ -85,7 +86,7 @@ public class HouseholdMemberService {
     //SDK model starts with an empty list, so an update that left the rooms out would clear them. The
     //list replaces the stored one, in the order given; an empty list leaves the member without rooms
     public Mono<HouseholdMember> replaceRooms(final String name, final List<RoomName> rooms) {
-        return checkedRooms(rooms)
+        return Mono.fromCallable(() -> checkedRooms(rooms))
             .flatMap(checked -> findMember(name)
                 .map(existing -> householdMemberMapper.withRooms(existing, checked)))
             .flatMap(householdMemberRepository::save)
@@ -129,21 +130,21 @@ public class HouseholdMemberService {
     //what the SDK model does not check: it is a plain list, so that the order survives. A room is a
     //room of the member once, and a null among them is nobody's room. Reported by the value a client
     //sends ("living room"), not by the name of the constant
-    private static Mono<List<RoomName>> checkedRooms(final List<RoomName> rooms) {
+    private static List<RoomName> checkedRooms(final List<RoomName> rooms) {
+        //a member built with the Lombok builder has no list at all - the builder skips the model's default
         if (rooms == null) {
-            return Mono.just(List.of());
+            return List.of();
         }
-        final Set<RoomName> seen = new HashSet<>();
+        final Set<RoomName> seen = EnumSet.noneOf(RoomName.class);
         for (final RoomName room : rooms) {
             if (room == null) {
-                return Mono.error(new InvalidHouseholdMemberException("A room must not be null"));
+                throw new InvalidHouseholdMemberException("A room must not be null");
             }
             if (!seen.add(room)) {
-                return Mono.error(new InvalidHouseholdMemberException(
-                    "Room [" + room.getValue() + "] is listed more than once"));
+                throw new InvalidHouseholdMemberException("Room [" + room.getValue() + "] is listed more than once");
             }
         }
-        return Mono.just(List.copyOf(rooms));
+        return List.copyOf(rooms);
     }
 
     private static HouseholdException nameTaken(final String name) {
