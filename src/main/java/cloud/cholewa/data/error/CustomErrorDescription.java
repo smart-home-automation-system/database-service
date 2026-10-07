@@ -17,6 +17,7 @@ public enum CustomErrorDescription implements ErrorId {
     UNKNOWN_GATEWAY("Invalid device configuration"),
     NOT_FOUND_HOUSEHOLD_MEMBER("Household member not found"),
     HOUSEHOLD_CONFLICT("Household member conflict"),
+    INVALID_HOUSEHOLD_MEMBER("Invalid household member"),
     DEVICE_EXIST("Member device already exists"),
     NOT_FOUND_MEMBER_DEVICE("Member device not found");
 

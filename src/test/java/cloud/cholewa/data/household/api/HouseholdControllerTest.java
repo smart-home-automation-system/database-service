@@ -3,16 +3,20 @@ package cloud.cholewa.data.household.api;
 import cloud.cholewa.data.config.ExceptionHandlerConfig;
 import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
+import cloud.cholewa.data.error.InvalidHouseholdMemberException;
 import cloud.cholewa.data.error.MemberDeviceException;
 import cloud.cholewa.data.error.MemberDeviceNotFoundException;
 import cloud.cholewa.data.household.service.HouseholdMemberService;
 import cloud.cholewa.data.household.service.MemberDeviceService;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.MemberPhoneDetails;
+import cloud.cholewa.home.model.MemberRole;
+import cloud.cholewa.home.model.RoomName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
@@ -26,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -135,6 +140,197 @@ class HouseholdControllerTest {
             .jsonPath("$.errors[0].details")
             .isEqualTo("Phone number [+48111222333] is already assigned to another household member")
             .jsonPath("$.errors[0].code").isEqualTo("HOUSEHOLD_CONFLICT");
+    }
+
+    @Test
+    void should_return_role_and_rooms_of_a_member() {
+        when(householdMemberService.getAllHouseholdMembers()).thenReturn(Mono.just(List.of(
+            new HouseholdMember().name("Ola").phone("+48111222333").role(MemberRole.ADMIN)
+                .addRoomsItem(RoomName.LIVING_ROOM).addRoomsItem(RoomName.OFFICE),
+            new HouseholdMember().name("Zenon").phone("+48999888777").role(MemberRole.RESIDENT)
+        )));
+
+        webTestClient.get()
+            .uri("/household")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            //as the SDK writes them: lower case, the rooms in their order
+            .jsonPath("$[0].role").isEqualTo("admin")
+            .jsonPath("$[0].rooms").value(rooms -> assertThat(rooms).isEqualTo(List.of("living room", "office")))
+            .jsonPath("$[1].role").isEqualTo("resident")
+            //an empty list is left out of the answer - a reader takes a missing "rooms" as none
+            .jsonPath("$[1].rooms").doesNotExist();
+    }
+
+    @Test
+    void should_pass_role_and_rooms_of_a_new_member_to_the_service() {
+        when(householdMemberService.addHouseholdMember(any())).thenReturn(Mono.just(MEMBER));
+
+        webTestClient.post()
+            .uri("/household/member")
+            .body(BodyInserters.fromValue(Map.of(
+                "name", "Ola", "phone", "+48111222333", "role", "admin", "rooms", List.of("sanctum", "living room"))))
+            .exchange()
+            .expectStatus().isCreated();
+
+        final ArgumentCaptor<HouseholdMember> sent = ArgumentCaptor.forClass(HouseholdMember.class);
+        verify(householdMemberService).addHouseholdMember(sent.capture());
+        assertThat(sent.getValue().getRole()).isEqualTo(MemberRole.ADMIN);
+        assertThat(sent.getValue().getRooms()).containsExactly(RoomName.SANCTUM, RoomName.LIVING_ROOM);
+    }
+
+    //what lets the service keep the stored role on an update: nothing sent arrives as null, not as a default
+    @Test
+    void should_pass_no_role_to_the_service_when_the_update_does_not_name_one() {
+        when(householdMemberService.updateHouseholdMember(eq("Ola"), any())).thenReturn(Mono.just(MEMBER));
+
+        webTestClient.patch()
+            .uri("/household/member/Ola")
+            .body(BodyInserters.fromValue(Map.of("name", "Ola", "phone", "+48111222333")))
+            .exchange()
+            .expectStatus().isOk();
+
+        final ArgumentCaptor<HouseholdMember> sent = ArgumentCaptor.forClass(HouseholdMember.class);
+        verify(householdMemberService).updateHouseholdMember(eq("Ola"), sent.capture());
+        assertThat(sent.getValue().getRole()).isNull();
+    }
+
+    //the value does not survive Jackson: the SDK enums refuse it. English whatever the machine, and
+    //naming the value - but without a code, like every request the model itself refuses
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("unknownValues")
+    void should_reject_member_with_unknown_role_or_room(
+        final String description, final Map<String, Object> body, final String details
+    ) {
+        webTestClient.post()
+            .uri("/household/member")
+            .body(BodyInserters.fromValue(body))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Malformed request body")
+            .jsonPath("$.errors[0].details").isEqualTo(details)
+            .jsonPath("$.errors[0].code").doesNotExist();
+
+        verifyNoInteractions(householdMemberService);
+    }
+
+    static Stream<Arguments> unknownValues() {
+        return Stream.of(
+            Arguments.of(
+                "unknown role",
+                Map.of("name", "Ola", "phone", "+48111222333", "role", "owner"),
+                "Unexpected value 'owner'"
+            ),
+            Arguments.of(
+                "unknown room",
+                Map.of("name", "Ola", "phone", "+48111222333", "rooms", List.of("office", "attic")),
+                "Unexpected value 'attic'"
+            )
+        );
+    }
+
+    @Test
+    void should_return_bad_request_when_the_registry_refuses_the_rooms() {
+        when(householdMemberService.addHouseholdMember(any())).thenReturn(Mono.error(
+            new InvalidHouseholdMemberException("Room [office] is listed more than once")));
+
+        webTestClient.post()
+            .uri("/household/member")
+            .body(BodyInserters.fromValue(Map.of(
+                "name", "Ola", "phone", "+48111222333", "rooms", List.of("office", "office"))))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Invalid household member")
+            .jsonPath("$.errors[0].details").isEqualTo("Room [office] is listed more than once")
+            .jsonPath("$.errors[0].code").isEqualTo("INVALID_HOUSEHOLD_MEMBER");
+    }
+
+    @Test
+    void should_replace_rooms_of_a_member() {
+        when(householdMemberService.replaceRooms(eq("Ola"), any())).thenReturn(Mono.just(
+            new HouseholdMember().name("Ola").phone("+48111222333").role(MemberRole.RESIDENT)
+                .addRoomsItem(RoomName.SANCTUM).addRoomsItem(RoomName.OFFICE)));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/rooms")
+            .body(BodyInserters.fromValue(List.of("sanctum", "office")))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.name").isEqualTo("Ola")
+            .jsonPath("$.rooms").value(rooms -> assertThat(rooms).isEqualTo(List.of("sanctum", "office")));
+
+        //in the order sent, which is the order they are shown in
+        verify(householdMemberService).replaceRooms("Ola", List.of(RoomName.SANCTUM, RoomName.OFFICE));
+    }
+
+    @Test
+    void should_clear_rooms_of_a_member_with_an_empty_list() {
+        when(householdMemberService.replaceRooms(eq("Ola"), any())).thenReturn(Mono.just(MEMBER));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/rooms")
+            .body(BodyInserters.fromValue(List.of()))
+            .exchange()
+            .expectStatus().isOk();
+
+        verify(householdMemberService).replaceRooms("Ola", List.of());
+    }
+
+    @Test
+    void should_reject_replacing_rooms_with_an_unknown_one() {
+        webTestClient.put()
+            .uri("/household/member/Ola/rooms")
+            .body(BodyInserters.fromValue(List.of("office", "attic")))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Malformed request body")
+            .jsonPath("$.errors[0].details").isEqualTo("Unexpected value 'attic'");
+
+        verifyNoInteractions(householdMemberService);
+    }
+
+    @Test
+    void should_reject_replacing_rooms_without_a_body() {
+        webTestClient.put()
+            .uri("/household/member/Ola/rooms")
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        verifyNoInteractions(householdMemberService);
+    }
+
+    @Test
+    void should_return_bad_request_when_the_registry_refuses_the_replaced_rooms() {
+        when(householdMemberService.replaceRooms(eq("Ola"), any())).thenReturn(Mono.error(
+            new InvalidHouseholdMemberException("Room [office] is listed more than once")));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/rooms")
+            .body(BodyInserters.fromValue(List.of("office", "office")))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].details").isEqualTo("Room [office] is listed more than once")
+            .jsonPath("$.errors[0].code").isEqualTo("INVALID_HOUSEHOLD_MEMBER");
+    }
+
+    @Test
+    void should_return_not_found_when_replacing_rooms_of_unknown_member() {
+        when(householdMemberService.replaceRooms(eq("Nobody"), any()))
+            .thenReturn(Mono.error(new HouseholdMemberNotFoundException("No household member named [Nobody]")));
+
+        webTestClient.put()
+            .uri("/household/member/Nobody/rooms")
+            .body(BodyInserters.fromValue(List.of("office")))
+            .exchange()
+            .expectStatus().isNotFound()
+            .expectBody()
+            .jsonPath("$.errors[0].code").isEqualTo("NOT_FOUND_HOUSEHOLD_MEMBER");
     }
 
     @Test

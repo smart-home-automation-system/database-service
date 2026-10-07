@@ -2,6 +2,7 @@ package cloud.cholewa.data.household.service;
 
 import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
+import cloud.cholewa.data.error.InvalidHouseholdMemberException;
 import cloud.cholewa.data.household.mapper.HouseholdMemberMapper;
 import cloud.cholewa.data.household.mapper.MemberDeviceMapper;
 import cloud.cholewa.data.household.model.HouseholdMemberEntity;
@@ -10,6 +11,7 @@ import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.MemberPhoneDetails;
+import cloud.cholewa.home.model.RoomName;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -18,7 +20,9 @@ import reactor.core.publisher.Mono;
 
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -49,16 +53,19 @@ public class HouseholdMemberService {
     }
 
     public Mono<HouseholdMember> addHouseholdMember(final HouseholdMember householdMember) {
-        return householdMemberRepository.existsByNameIgnoreCase(householdMember.getName())
-            .filter(Boolean::booleanValue)
-            .flatMap(exists ->
-                Mono.<HouseholdMember>error(nameTaken(householdMember.getName())))
-            .switchIfEmpty(Mono.defer(() ->
-                Mono.just(householdMemberMapper.toEntity(householdMember))
-                    .flatMap(householdMemberRepository::save)
-                    .onErrorMap(DuplicateKeyException.class, e -> duplicateMember(e, householdMember))
-                    //a new member has no devices yet - the ones in the payload are ignored
-                    .map(saved -> withDevices(saved, List.of()))));
+        //the rooms first: a refused list runs no query. What is stored is the checked list, the same
+        //one a replacement of the rooms stores - not a second reading of the payload
+        return Mono.fromCallable(() -> checkedRooms(householdMember.getRooms()))
+            .flatMap(rooms -> householdMemberRepository.existsByNameIgnoreCase(householdMember.getName())
+                .filter(Boolean::booleanValue)
+                .flatMap(exists ->
+                    Mono.<HouseholdMember>error(nameTaken(householdMember.getName())))
+                .switchIfEmpty(Mono.defer(() ->
+                    Mono.just(householdMemberMapper.toEntity(householdMember, rooms))
+                        .flatMap(householdMemberRepository::save)
+                        .onErrorMap(DuplicateKeyException.class, e -> duplicateMember(e, householdMember))
+                        //a new member has no devices yet - the ones in the payload are ignored
+                        .map(saved -> withDevices(saved, List.of())))));
     }
 
     public Mono<Void> removeHouseholdMember(final String name) {
@@ -72,6 +79,17 @@ public class HouseholdMemberService {
             .flatMap(existing ->
                 householdMemberRepository.save(householdMemberMapper.toUpdatedEntity(existing, householdMember)))
             .onErrorMap(DuplicateKeyException.class, e -> duplicateMember(e, householdMember))
+            .flatMap(this::withStoredDevices);
+    }
+
+    //an operation of its own rather than a field of the update, for the reason the activity is one: the
+    //SDK model starts with an empty list, so an update that left the rooms out would clear them. The
+    //list replaces the stored one, in the order given; an empty list leaves the member without rooms
+    public Mono<HouseholdMember> replaceRooms(final String name, final List<RoomName> rooms) {
+        return Mono.fromCallable(() -> checkedRooms(rooms))
+            .flatMap(checked -> findMember(name)
+                .map(existing -> householdMemberMapper.withRooms(existing, checked)))
+            .flatMap(householdMemberRepository::save)
             .flatMap(this::withStoredDevices);
     }
 
@@ -107,6 +125,26 @@ public class HouseholdMemberService {
         return memberDeviceRepository.findAllByMemberId(member.getId())
             .collectList()
             .map(devices -> withDevices(member, devices));
+    }
+
+    //what the SDK model does not check: it is a plain list, so that the order survives. A room is a
+    //room of the member once, and a null among them is nobody's room. Reported by the value a client
+    //sends ("living room"), not by the name of the constant
+    private static List<RoomName> checkedRooms(final List<RoomName> rooms) {
+        //a member built with the Lombok builder has no list at all - the builder skips the model's default
+        if (rooms == null) {
+            return List.of();
+        }
+        final Set<RoomName> seen = EnumSet.noneOf(RoomName.class);
+        for (final RoomName room : rooms) {
+            if (room == null) {
+                throw new InvalidHouseholdMemberException("A room must not be null");
+            }
+            if (!seen.add(room)) {
+                throw new InvalidHouseholdMemberException("Room [" + room.getValue() + "] is listed more than once");
+            }
+        }
+        return List.copyOf(rooms);
     }
 
     private static HouseholdException nameTaken(final String name) {
