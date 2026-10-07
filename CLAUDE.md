@@ -40,7 +40,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **Addressing by natural keys.** Members by `name`, devices by `mac` — both unique in the
   schema. No surrogate id is exposed; the SDK models have none. Keep it that way rather than
   adding ids a client would first have to look up.
-- **Bodies are the SDK models** `HouseholdMember` / `MemberPhoneDetails` (smart-home-sdk ≥ 1.4.0)
+- **Bodies are the SDK models** `HouseholdMember` / `MemberPhoneDetails` (smart-home-sdk ≥ 1.5.0)
   with `@Valid`: name 3–50, phone E.164 (`+48505602702`), device name ≤ 50, MAC lowercase and
   colon-separated. The same bounds are in the schema (`V8`, phone since `V9`); change them in the
   SDK and in a new migration together.
@@ -118,6 +118,22 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **Member responses carry the member's devices** (POST/PATCH/activate/deactivate, like GET), so a
   client replacing its cached member with a response does not lose them; devices in a member
   payload are ignored — they are managed through the device endpoints.
+- **`GET /household/profiles` is the read of the web dashboard** (HAS-211) — every browser in
+  the house calls it, at every start. It answers the **active** members with `name`, `role`
+  and `rooms` as `HouseholdProfile`, a model with no phone and no devices. Three rules:
+  - **Nothing else may ever be added to that body.** The model has no field for it (pinned in
+    the SDK), and `should_return_profiles_of_active_members_without_reading_devices` compares
+    whole profiles off the real mapper — MapStruct copies every property two classes share by
+    name, so a `phone` added to the model would be filled from the row without a line changing
+    here. What the dashboard needs beyond a profile gets its own decision, not a field.
+  - **Leaving out the switched-off members is this service's rule**: the model has no
+    `active`, so a client cannot tell. The filter is the derived query `findAllByActiveTrue`,
+    which — like every query of the registry — no test executes (HAS-207); check it with a call
+    after a deploy.
+  - It reads the rows whole (the phone stops at the mapper) and never touches `member_devices`.
+    A three-column projection would be a second, untested path for the `TEXT[]` rooms column.
+  The full `GET /household` stays for `presence-service` and household administration; both
+  are open to whoever reaches the gateway until it validates tokens.
 - **An empty registry is `200 []`**, not 404 — `presence-service` polls it.
 - `GET /household` reads the whole registry in two queries (members + all devices, grouped by
   `memberId`) — fine for ~10 members, no paging by design. `HouseholdMember` is not
