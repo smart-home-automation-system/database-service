@@ -22,6 +22,7 @@ class CustomErrorDescriptionTest {
                 "UNKNOWN_GATEWAY",
                 "NOT_FOUND_HOUSEHOLD_MEMBER",
                 "HOUSEHOLD_CONFLICT",
+                "INVALID_HOUSEHOLD_MEMBER",
                 "DEVICE_EXIST",
                 "NOT_FOUND_MEMBER_DEVICE"
             );

@@ -10,6 +10,7 @@ import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.MemberPhoneDetails;
+import cloud.cholewa.home.model.MemberRole;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -22,6 +23,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -38,7 +40,7 @@ class MemberDeviceServiceTest {
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 8, 15, 12, 0);
 
     private static final HouseholdMemberEntity MEMBER = new HouseholdMemberEntity(
-        7L, CREATED_AT, null, "Ola", "+48111222333", true
+        7L, CREATED_AT, null, "Ola", "+48111222333", true, MemberRole.RESIDENT, List.of()
     );
 
     private static final MemberDeviceEntity STORED_DEVICE = new MemberDeviceEntity(

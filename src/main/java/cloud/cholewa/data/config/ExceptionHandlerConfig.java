@@ -6,6 +6,7 @@ import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
 import cloud.cholewa.data.error.HouseholdException;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
 import cloud.cholewa.data.error.InvalidDeviceConfigurationException;
+import cloud.cholewa.data.error.InvalidHouseholdMemberException;
 import cloud.cholewa.data.error.MemberDeviceException;
 import cloud.cholewa.data.error.MemberDeviceNotFoundException;
 import cloud.cholewa.data.error.processor.DomainExceptionProcessor;
@@ -24,6 +25,7 @@ import java.util.Map;
 import static cloud.cholewa.data.error.CustomErrorDescription.CONFIGURATION_EXIST;
 import static cloud.cholewa.data.error.CustomErrorDescription.DEVICE_EXIST;
 import static cloud.cholewa.data.error.CustomErrorDescription.HOUSEHOLD_CONFLICT;
+import static cloud.cholewa.data.error.CustomErrorDescription.INVALID_HOUSEHOLD_MEMBER;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_DEVICE_CONFIGURATION;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_HOUSEHOLD_MEMBER;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_MEMBER_DEVICE;
@@ -57,6 +59,7 @@ public class ExceptionHandlerConfig {
                 Map.entry(DeviceConfigurationExistsException.class, new DomainExceptionProcessor(CONFLICT, CONFIGURATION_EXIST)),
                 Map.entry(HouseholdMemberNotFoundException.class, new DomainExceptionProcessor(NOT_FOUND, NOT_FOUND_HOUSEHOLD_MEMBER)),
                 Map.entry(HouseholdException.class, new DomainExceptionProcessor(CONFLICT, HOUSEHOLD_CONFLICT)),
+                Map.entry(InvalidHouseholdMemberException.class, new DomainExceptionProcessor(BAD_REQUEST, INVALID_HOUSEHOLD_MEMBER)),
                 Map.entry(MemberDeviceException.class, new DomainExceptionProcessor(CONFLICT, DEVICE_EXIST)),
                 Map.entry(MemberDeviceNotFoundException.class, new DomainExceptionProcessor(NOT_FOUND, NOT_FOUND_MEMBER_DEVICE)),
                 //constraints on query parameters and path variables; without it the cholewa-commons

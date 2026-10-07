@@ -40,7 +40,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **Addressing by natural keys.** Members by `name`, devices by `mac` — both unique in the
   schema. No surrogate id is exposed; the SDK models have none. Keep it that way rather than
   adding ids a client would first have to look up.
-- **Bodies are the SDK models** `HouseholdMember` / `MemberPhoneDetails` (smart-home-sdk ≥ 1.3.0)
+- **Bodies are the SDK models** `HouseholdMember` / `MemberPhoneDetails` (smart-home-sdk ≥ 1.4.0)
   with `@Valid`: name 3–50, phone E.164 (`+48505602702`), device name ≤ 50, MAC lowercase and
   colon-separated. The same bounds are in the schema (`V8`, phone since `V9`); change them in the
   SDK and in a new migration together.
@@ -50,15 +50,39 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   standard form. The `mac` **query parameter** is lowercased before the lookup; the body
   is not normalised — the SDK pattern rejects uppercase.
 - **Updates must keep the stored row's id.** `R2dbcRepository.save()` INSERTs an entity with a
-  null id; the `toUpdatedEntity(existing, …)` / `withActive(existing, …)` mappers copy `id`,
-  `createdAt` (and `memberId` / `active`) from the found row. A fresh `toEntity(...)` on an update
+  null id; the `toUpdatedEntity(existing, …)` / `withActive(existing, …)` /
+  `withRooms(existing, …)` mappers copy `id`, `createdAt` (and `memberId` / `active` / `role` /
+  `rooms`) from the found row. **A new column of `household_members` has to be added to every
+  one of them** — MapStruct would otherwise write `null` over it on the next update. A fresh `toEntity(...)` on an update
   path silently creates a second row — this bug existed once.
 - **`active` is changed only through `/activate` and `/deactivate`.** It defaults to `true` in
   the SDK model, so if PATCH honoured it, an update that just omitted the field would reactivate
   the member. PATCH keeps the stored value.
+- **Role and rooms** (HAS-192, `V11`) — what the web dashboard shows a member. Three rules,
+  each the answer to a way an update could change something nobody asked for:
+  - **`role` is `null` when not sent** (the SDK model has no default, on purpose). `POST`
+    without one stores `RESIDENT` (the mapper's `defaultValue`); `PATCH` without one — or with
+    an explicit `null` — keeps the stored role. Never give the role a default anywhere on the
+    way in: an update of the phone alone would then turn an admin into a resident.
+  - **The rooms are replaced only through `PUT /member/{name}/rooms`.** The SDK model starts
+    `rooms` as an empty list, so "not sent" and "none" look the same; `PATCH` therefore ignores
+    them, exactly as it ignores `active`. `POST` takes the rooms of a new member.
+  - **The model does not check the rooms; the service does** (`checkedRooms`): a room listed
+    twice or a `null` among them is `InvalidHouseholdMemberException` → 400
+    `INVALID_HOUSEHOLD_MEMBER`, named by the value a client sends (`living room`), and decided
+    before any query runs. The list is a list, not a set, so the order survives — it is the
+    order the rooms are shown in.
+  - An **unknown** role or room never reaches the service: the SDK enum throws inside Jackson
+    and `cholewa-commons` answers 400 `Malformed request body` with `Unexpected value '…'`
+    (no code). Verified in the controller slice, which uses the real Jackson.
+  - Stored as the **constant names** (`ADMIN`, `LIVING_ROOM`), like the enums of
+    `eaton_devices`; the API speaks the SDK values (`admin`, `living room`). `rooms` is a
+    PostgreSQL **array column** mapped to `List<RoomName>` — Spring Data R2DBC converts both
+    ways, an empty list is `{}`. A response leaves an empty `rooms` out (`NON_EMPTY`).
 - **Column defaults never apply.** Spring Data R2DBC writes every column of an entity, nulls
-  included, so `DEFAULT TRUE` on `active` or a missing `created_at` do not help — the mappers set
-  both.
+  included, so `DEFAULT TRUE` on `active`, `DEFAULT 'RESIDENT'` on `role` or a missing
+  `created_at` do not help — the mappers set them. (The default of `role` did its one job in
+  `V11`: the members that existed became residents.)
 - **Duplicates are mapped by constraint name, per service.** No global processor for
   `DuplicateKeyException` (there was one for the Eaton message until HAS-150, and it leaked that
   message into every other duplicate): each service maps its own duplicates to a domain exception
@@ -165,6 +189,14 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   replace the library's `ConnectionFactory` with an own bean.
 - Flyway runs on startup in `home`/`local`, disabled in `test`. Migrations are append-only:
   never edit an applied `V<n>` — the cluster validates checksums and the pod would not start.
+- **Rehearse a migration on a throwaway PostgreSQL, with the released image first** (how `V11`
+  was checked, HAS-192): `docker run postgres:17-alpine` on a local port, then the image of
+  the **current release** against it (it applies the migrations so far; create a few rows
+  through its API), then the new jar with `--database-host=localhost --database-port=…` and
+  the other four `--database-*` arguments given explicitly. That is the rollout in small: the
+  new migration runs over rows the old version wrote. Two things it needs: the container must
+  speak **SSL** (`ssl = on` with a self-signed certificate — `cholewa-commons` connects with
+  `sslMode` `REQUIRE`), and nothing may come from the IDEA env file.
 - **A local run talks to the production database.** The `local` profile itself carries no
   connection properties; the IDEA run configuration (`home,local`) loads them from an env file
   outside the repo, and that file points at the managed production database. A local run

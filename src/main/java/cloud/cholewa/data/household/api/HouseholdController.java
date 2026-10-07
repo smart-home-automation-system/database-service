@@ -4,6 +4,7 @@ import cloud.cholewa.data.household.service.HouseholdMemberService;
 import cloud.cholewa.data.household.service.MemberDeviceService;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.MemberPhoneDetails;
+import cloud.cholewa.home.model.RoomName;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -59,6 +61,17 @@ public class HouseholdController {
         @Valid @RequestBody final HouseholdMember householdMember
     ) {
         return householdService.updateHouseholdMember(name, householdMember)
+            .map(ResponseEntity::ok);
+    }
+
+    //the whole list of the member's rooms, in the order they are shown; [] leaves the member without
+    //rooms. PUT, not PATCH: the list is replaced, never merged
+    @PutMapping("/member/{name}/rooms")
+    Mono<ResponseEntity<HouseholdMember>> replaceHouseholdMemberRooms(
+        @PathVariable final String name,
+        @RequestBody final List<RoomName> rooms
+    ) {
+        return householdService.replaceRooms(name, rooms)
             .map(ResponseEntity::ok);
     }
 
