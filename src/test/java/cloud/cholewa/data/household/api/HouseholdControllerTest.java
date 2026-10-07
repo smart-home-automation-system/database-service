@@ -17,11 +17,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.json.JsonCompareMode;
@@ -91,8 +91,10 @@ class HouseholdControllerTest {
             .json("[]");
     }
 
-    //the body compared as a whole, strictly: this read goes to every browser in the house, so a field
-    //that appears in it later - a phone, a device - has to fail here. An empty list of rooms is left out
+    //the body compared as a whole, strictly: this read goes to every browser in the house. What the
+    //controller writes is what the service hands it - that the service hands over nothing of the
+    //phone is asserted in HouseholdMemberServiceTest, on the real mapper. An empty list of rooms is
+    //left out
     @Test
     void should_return_profiles_with_name_role_and_rooms_only() {
         when(householdMemberService.getHouseholdProfiles()).thenReturn(Mono.just(List.of(
@@ -130,7 +132,7 @@ class HouseholdControllerTest {
     }
 
     //the profiles are read-only: the registry is changed through the member endpoints
-    @ParameterizedTest
+    @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"POST", "PUT", "PATCH", "DELETE"})
     void should_not_accept_writes_on_profiles(final String method) {
         webTestClient.method(HttpMethod.valueOf(method))

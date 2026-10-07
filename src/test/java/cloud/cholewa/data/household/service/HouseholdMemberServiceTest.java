@@ -133,14 +133,18 @@ class HouseholdMemberServiceTest {
                 List.of(RoomName.LOFT))
         ));
 
+        //whole profiles, compared field by field, off the real mapper: MapStruct fills every property
+        //the two classes share by name, so a phone added to the model one day would be copied from
+        //the row without a line changing here - and would make these profiles differ
         sut.getHouseholdProfiles()
             .as(StepVerifier::create)
             .assertNext(profiles -> assertThat(profiles)
-                .extracting(HouseholdProfile::getName, HouseholdProfile::getRole, HouseholdProfile::getRooms)
+                .usingRecursiveFieldByFieldElementComparator()
                 .containsExactly(
-                    tuple("anna", MemberRole.RESIDENT, List.of(RoomName.LOFT)),
-                    tuple("Ola", MemberRole.ADMIN, List.of(RoomName.SANCTUM, RoomName.OFFICE)),
-                    tuple("Zenon", MemberRole.RESIDENT, List.of())
+                    new HouseholdProfile().name("anna").role(MemberRole.RESIDENT).rooms(List.of(RoomName.LOFT)),
+                    new HouseholdProfile().name("Ola").role(MemberRole.ADMIN)
+                        .rooms(List.of(RoomName.SANCTUM, RoomName.OFFICE)),
+                    new HouseholdProfile().name("Zenon").role(MemberRole.RESIDENT).rooms(List.of())
                 ))
             .verifyComplete();
 
