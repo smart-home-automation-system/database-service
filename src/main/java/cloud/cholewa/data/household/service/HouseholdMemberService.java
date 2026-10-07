@@ -10,6 +10,7 @@ import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import cloud.cholewa.home.model.RoomName;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +51,16 @@ public class HouseholdMemberService {
                 //names are case-insensitive, so is their order: "anna" before "Zofia"
                 .sorted(Comparator.comparing(HouseholdMember::getName, String.CASE_INSENSITIVE_ORDER))
                 .toList());
+    }
+
+    //the read of the web dashboard: who may use it, and as whom. Active members only - a member who is
+    //switched off has no profile - and one query: the devices are neither read nor sent, and the phone
+    //of a row stops at the mapper, whose target has no place for it. Ordered like the registry
+    public Mono<List<HouseholdProfile>> getHouseholdProfiles() {
+        return householdMemberRepository.findAllByActiveTrue()
+            .map(householdMemberMapper::toHouseholdProfile)
+            .sort(Comparator.comparing(HouseholdProfile::getName, String.CASE_INSENSITIVE_ORDER))
+            .collectList();
     }
 
     public Mono<HouseholdMember> addHouseholdMember(final HouseholdMember householdMember) {

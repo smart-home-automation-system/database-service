@@ -9,6 +9,7 @@ import cloud.cholewa.data.error.MemberDeviceNotFoundException;
 import cloud.cholewa.data.household.service.HouseholdMemberService;
 import cloud.cholewa.data.household.service.MemberDeviceService;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import cloud.cholewa.home.model.MemberRole;
 import cloud.cholewa.home.model.RoomName;
@@ -20,7 +21,10 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
@@ -85,6 +89,56 @@ class HouseholdControllerTest {
             .expectStatus().isOk()
             .expectBody()
             .json("[]");
+    }
+
+    //the body compared as a whole, strictly: this read goes to every browser in the house, so a field
+    //that appears in it later - a phone, a device - has to fail here. An empty list of rooms is left out
+    @Test
+    void should_return_profiles_with_name_role_and_rooms_only() {
+        when(householdMemberService.getHouseholdProfiles()).thenReturn(Mono.just(List.of(
+            new HouseholdProfile().name("Ola").role(MemberRole.ADMIN)
+                .addRoomsItem(RoomName.SANCTUM).addRoomsItem(RoomName.LIVING_ROOM),
+            new HouseholdProfile().name("Zenon").role(MemberRole.RESIDENT)
+        )));
+
+        webTestClient.get()
+            .uri("/household/profiles")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .json(
+                """
+                    [
+                      {"name": "Ola", "role": "admin", "rooms": ["sanctum", "living room"]},
+                      {"name": "Zenon", "role": "resident"}
+                    ]
+                    """,
+                JsonCompareMode.STRICT
+            );
+    }
+
+    @Test
+    void should_return_empty_list_when_there_are_no_profiles() {
+        when(householdMemberService.getHouseholdProfiles()).thenReturn(Mono.just(List.of()));
+
+        webTestClient.get()
+            .uri("/household/profiles")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .json("[]", JsonCompareMode.STRICT);
+    }
+
+    //the profiles are read-only: the registry is changed through the member endpoints
+    @ParameterizedTest
+    @ValueSource(strings = {"POST", "PUT", "PATCH", "DELETE"})
+    void should_not_accept_writes_on_profiles(final String method) {
+        webTestClient.method(HttpMethod.valueOf(method))
+            .uri("/household/profiles")
+            .exchange()
+            .expectStatus().isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+
+        verifyNoInteractions(householdMemberService);
     }
 
     @Test

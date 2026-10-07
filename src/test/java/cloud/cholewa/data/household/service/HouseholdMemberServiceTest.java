@@ -12,6 +12,7 @@ import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import cloud.cholewa.home.model.MemberRole;
 import cloud.cholewa.home.model.RoomName;
@@ -39,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -117,6 +119,42 @@ class HouseholdMemberServiceTest {
                     );
                 assertThat(members.get(1).getDevices()).isEmpty();
             })
+            .verifyComplete();
+    }
+
+    //the repository answers the active members; what is asserted here is what leaves the service:
+    //name, role and rooms in their stored order, sorted like the registry, and no query for devices
+    @Test
+    void should_return_profiles_of_active_members_without_reading_devices() {
+        when(repository.findAllByActiveTrue()).thenReturn(Flux.just(
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of()),
+            STORED,
+            new HouseholdMemberEntity(3L, CREATED_AT, null, "anna", "+48777666555", true, MemberRole.RESIDENT,
+                List.of(RoomName.LOFT))
+        ));
+
+        sut.getHouseholdProfiles()
+            .as(StepVerifier::create)
+            .assertNext(profiles -> assertThat(profiles)
+                .extracting(HouseholdProfile::getName, HouseholdProfile::getRole, HouseholdProfile::getRooms)
+                .containsExactly(
+                    tuple("anna", MemberRole.RESIDENT, List.of(RoomName.LOFT)),
+                    tuple("Ola", MemberRole.ADMIN, List.of(RoomName.SANCTUM, RoomName.OFFICE)),
+                    tuple("Zenon", MemberRole.RESIDENT, List.of())
+                ))
+            .verifyComplete();
+
+        verify(repository, never()).findAll();
+        verifyNoInteractions(deviceRepository);
+    }
+
+    @Test
+    void should_return_no_profiles_when_nobody_is_active() {
+        when(repository.findAllByActiveTrue()).thenReturn(Flux.empty());
+
+        sut.getHouseholdProfiles()
+            .as(StepVerifier::create)
+            .assertNext(profiles -> assertThat(profiles).isEmpty())
             .verifyComplete();
     }
 
