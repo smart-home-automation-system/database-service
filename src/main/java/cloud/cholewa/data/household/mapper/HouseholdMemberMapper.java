@@ -2,6 +2,7 @@ package cloud.cholewa.data.household.mapper;
 
 import cloud.cholewa.data.household.model.HouseholdMemberEntity;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.RoomName;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -13,6 +14,10 @@ public interface HouseholdMemberMapper {
 
     @Mapping(target = "devices", ignore = true)
     HouseholdMember toHouseholdMember(HouseholdMemberEntity entity);
+
+    //what the web dashboard may know about a member. The target has no phone and no devices, and that
+    //is the whole point of it: a field is not left out here, it does not exist in the model
+    HouseholdProfile toHouseholdProfile(HouseholdMemberEntity entity);
 
     //devices are managed through their own endpoints, never through the member payload.
     //THE place where a missing role becomes a resident: the SDK model has no default on purpose (a

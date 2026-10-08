@@ -12,6 +12,7 @@ import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import cloud.cholewa.home.model.MemberRole;
 import cloud.cholewa.home.model.RoomName;
@@ -39,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -117,6 +119,46 @@ class HouseholdMemberServiceTest {
                     );
                 assertThat(members.get(1).getDevices()).isEmpty();
             })
+            .verifyComplete();
+    }
+
+    //the repository answers the active members; what is asserted here is what leaves the service:
+    //name, role and rooms in their stored order, sorted like the registry, and no query for devices
+    @Test
+    void should_return_profiles_of_active_members_without_reading_devices() {
+        when(repository.findAllByActiveTrue()).thenReturn(Flux.just(
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of()),
+            STORED,
+            new HouseholdMemberEntity(3L, CREATED_AT, null, "anna", "+48777666555", true, MemberRole.RESIDENT,
+                List.of(RoomName.LOFT))
+        ));
+
+        //whole profiles, compared field by field, off the real mapper: MapStruct fills every property
+        //the two classes share by name, so a phone added to the model one day would be copied from
+        //the row without a line changing here - and would make these profiles differ
+        sut.getHouseholdProfiles()
+            .as(StepVerifier::create)
+            .assertNext(profiles -> assertThat(profiles)
+                .usingRecursiveFieldByFieldElementComparator()
+                .containsExactly(
+                    new HouseholdProfile().name("anna").role(MemberRole.RESIDENT).rooms(List.of(RoomName.LOFT)),
+                    new HouseholdProfile().name("Ola").role(MemberRole.ADMIN)
+                        .rooms(List.of(RoomName.SANCTUM, RoomName.OFFICE)),
+                    new HouseholdProfile().name("Zenon").role(MemberRole.RESIDENT).rooms(List.of())
+                ))
+            .verifyComplete();
+
+        verify(repository, never()).findAll();
+        verifyNoInteractions(deviceRepository);
+    }
+
+    @Test
+    void should_return_no_profiles_when_nobody_is_active() {
+        when(repository.findAllByActiveTrue()).thenReturn(Flux.empty());
+
+        sut.getHouseholdProfiles()
+            .as(StepVerifier::create)
+            .assertNext(profiles -> assertThat(profiles).isEmpty())
             .verifyComplete();
     }
 

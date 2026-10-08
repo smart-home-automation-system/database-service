@@ -3,6 +3,7 @@ package cloud.cholewa.data.household.api;
 import cloud.cholewa.data.household.service.HouseholdMemberService;
 import cloud.cholewa.data.household.service.MemberDeviceService;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import cloud.cholewa.home.model.RoomName;
 import jakarta.validation.Valid;
@@ -38,6 +39,14 @@ public class HouseholdController {
     @GetMapping
     Mono<ResponseEntity<List<HouseholdMember>>> getAllHouseholdMembers() {
         return householdService.getAllHouseholdMembers()
+            .map(ResponseEntity::ok);
+    }
+
+    //for the web dashboard, which every browser in the house opens: the active members with their role
+    //and rooms, and nothing else of the registry - no phone, no devices
+    @GetMapping("/profiles")
+    Mono<ResponseEntity<List<HouseholdProfile>>> getHouseholdProfiles() {
+        return householdService.getHouseholdProfiles()
             .map(ResponseEntity::ok);
     }
 

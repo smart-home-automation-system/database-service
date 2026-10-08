@@ -10,6 +10,7 @@ import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
+import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import cloud.cholewa.home.model.RoomName;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,10 @@ public class HouseholdMemberService {
     private static final String NAME_UNIQUE_CONSTRAINT = "household_members_name_upper_uq";
     private static final String PHONE_UNIQUE_CONSTRAINT = "household_members_phone_uq";
 
+    //names are case-insensitive, so is their order: "anna" before "Zofia". One rule for the registry and
+    //for the profiles read from it - the two lists name the same people
+    private static final Comparator<String> NAME_ORDER = String.CASE_INSENSITIVE_ORDER;
+
     private final HouseholdMemberRepository householdMemberRepository;
     private final HouseholdMemberMapper householdMemberMapper;
     private final MemberDeviceRepository memberDeviceRepository;
@@ -47,9 +52,18 @@ public class HouseholdMemberService {
             //an empty registry is an empty list, not an error: presence-service polls it
             .map(registry -> registry.getT1().stream()
                 .map(member -> withDevices(member, registry.getT2().getOrDefault(member.getId(), List.of())))
-                //names are case-insensitive, so is their order: "anna" before "Zofia"
-                .sorted(Comparator.comparing(HouseholdMember::getName, String.CASE_INSENSITIVE_ORDER))
+                .sorted(Comparator.comparing(HouseholdMember::getName, NAME_ORDER))
                 .toList());
+    }
+
+    //the read of the web dashboard: who may use it, and as whom. Active members only - a member who is
+    //switched off has no profile - and one query: the devices are neither read nor sent, and the phone
+    //of a row stops at the mapper, whose target has no place for it. Ordered like the registry
+    public Mono<List<HouseholdProfile>> getHouseholdProfiles() {
+        return householdMemberRepository.findAllByActiveTrue()
+            .map(householdMemberMapper::toHouseholdProfile)
+            .sort(Comparator.comparing(HouseholdProfile::getName, NAME_ORDER))
+            .collectList();
     }
 
     public Mono<HouseholdMember> addHouseholdMember(final HouseholdMember householdMember) {
