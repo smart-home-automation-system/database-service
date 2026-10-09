@@ -11,6 +11,7 @@ import cloud.cholewa.data.household.service.MemberDeviceService;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
+import cloud.cholewa.home.model.MemberPermission;
 import cloud.cholewa.home.model.MemberRole;
 import cloud.cholewa.home.model.RoomName;
 import org.junit.jupiter.api.Test;
@@ -24,12 +25,14 @@ import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import reactor.core.publisher.Mono;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -383,6 +386,155 @@ class HouseholdControllerTest {
         webTestClient.put()
             .uri("/household/member/Nobody/rooms")
             .body(BodyInserters.fromValue(List.of("office")))
+            .exchange()
+            .expectStatus().isNotFound()
+            .expectBody()
+            .jsonPath("$.errors[0].code").isEqualTo("NOT_FOUND_HOUSEHOLD_MEMBER");
+    }
+
+    //---- permissions ----
+
+    //what the web dashboard reads to decide which controls it offers a member
+    @Test
+    void should_return_permissions_in_the_profiles_and_leave_out_an_empty_list() {
+        when(householdMemberService.getHouseholdProfiles()).thenReturn(Mono.just(List.of(
+            new HouseholdProfile().name("Jan").role(MemberRole.RESIDENT),
+            new HouseholdProfile().name("Ola").role(MemberRole.RESIDENT)
+                .addPermissionsItem(MemberPermission.HEATING_SWITCH)
+        )));
+
+        webTestClient.get()
+            .uri("/household/profiles")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .json(
+                """
+                    [
+                      {"name": "Jan", "role": "resident"},
+                      {"name": "Ola", "role": "resident", "permissions": ["heating_switch"]}
+                    ]
+                    """,
+                JsonCompareMode.STRICT
+            );
+    }
+
+    @Test
+    void should_replace_permissions_of_a_member() {
+        when(householdMemberService.replacePermissions(eq("Ola"), any())).thenReturn(Mono.just(
+            new HouseholdMember().name("Ola").phone("+48111222333").role(MemberRole.RESIDENT)
+                .addPermissionsItem(MemberPermission.HEATING_SWITCH)));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .body(BodyInserters.fromValue(List.of("heating_switch")))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.name").isEqualTo("Ola")
+            .jsonPath("$.permissions").value(granted -> assertThat(granted).isEqualTo(List.of("heating_switch")));
+
+        verify(householdMemberService).replacePermissions("Ola", List.of(MemberPermission.HEATING_SWITCH));
+    }
+
+    @Test
+    void should_take_permissions_of_a_member_away_with_an_empty_list() {
+        when(householdMemberService.replacePermissions(eq("Ola"), any())).thenReturn(Mono.just(MEMBER));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .body(BodyInserters.fromValue(List.of()))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.permissions").doesNotExist();
+
+        verify(householdMemberService).replacePermissions("Ola", List.of());
+    }
+
+    @Test
+    void should_reject_replacing_permissions_with_an_unknown_one() {
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .body(BodyInserters.fromValue(List.of("heating_switch", "everything")))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Malformed request body")
+            .jsonPath("$.errors[0].details").isEqualTo("Unexpected value 'everything'");
+
+        verifyNoInteractions(householdMemberService);
+    }
+
+    @Test
+    void should_reject_replacing_permissions_without_a_body() {
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        verifyNoInteractions(householdMemberService);
+    }
+
+    //the body is the list itself: a single value or an object is not one
+    @ParameterizedTest
+    @ValueSource(strings = {"\"heating_switch\"", "{\"permissions\": [\"heating_switch\"]}"})
+    void should_reject_replacing_permissions_with_a_body_that_is_not_an_array(final String body) {
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(body)
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Malformed request body");
+
+        verifyNoInteractions(householdMemberService);
+    }
+
+    //Jackson reads [null] as a list holding a null - refusing it is the service's (checkedPermissions),
+    //so what has to hold here is that the null arrives there and is not dropped on the way
+    @Test
+    void should_hand_a_null_among_the_permissions_on_to_the_service_that_refuses_it() {
+        when(householdMemberService.replacePermissions(eq("Ola"), any())).thenReturn(Mono.error(
+            new InvalidHouseholdMemberException("A permission must not be null")));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("[null]")
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].details").isEqualTo("A permission must not be null")
+            .jsonPath("$.errors[0].code").isEqualTo("INVALID_HOUSEHOLD_MEMBER");
+
+        verify(householdMemberService).replacePermissions("Ola", Arrays.asList((MemberPermission) null));
+    }
+
+    @Test
+    void should_return_bad_request_when_the_registry_refuses_the_replaced_permissions() {
+        when(householdMemberService.replacePermissions(eq("Ola"), any())).thenReturn(Mono.error(
+            new InvalidHouseholdMemberException("Permission [heating_switch] is listed more than once")));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .body(BodyInserters.fromValue(List.of("heating_switch", "heating_switch")))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].details").isEqualTo("Permission [heating_switch] is listed more than once")
+            .jsonPath("$.errors[0].code").isEqualTo("INVALID_HOUSEHOLD_MEMBER");
+    }
+
+    @Test
+    void should_return_not_found_when_replacing_permissions_of_unknown_member() {
+        when(householdMemberService.replacePermissions(eq("Nobody"), any()))
+            .thenReturn(Mono.error(new HouseholdMemberNotFoundException("No household member named [Nobody]")));
+
+        webTestClient.put()
+            .uri("/household/member/Nobody/permissions")
+            .body(BodyInserters.fromValue(List.of("heating_switch")))
             .exchange()
             .expectStatus().isNotFound()
             .expectBody()
