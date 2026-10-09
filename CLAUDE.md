@@ -51,8 +51,8 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   is not normalised — the SDK pattern rejects uppercase.
 - **Updates must keep the stored row's id.** `R2dbcRepository.save()` INSERTs an entity with a
   null id; the `toUpdatedEntity(existing, …)` / `withActive(existing, …)` /
-  `withRooms(existing, …)` mappers copy `id`, `createdAt` (and `memberId` / `active` / `role` /
-  `rooms`) from the found row. **A new column of `household_members` has to be added to every
+  `withRooms(existing, …)` / `withPermissions(existing, …)` mappers copy `id`, `createdAt` (and
+  `memberId` / `active` / `role` / `rooms` / `permissions`) from the found row. **A new column of `household_members` has to be added to every
   one of them** — MapStruct would otherwise write `null` over it on the next update. A fresh `toEntity(...)` on an update
   path silently creates a second row — this bug existed once.
 - **`active` is changed only through `/activate` and `/deactivate`.** It defaults to `true` in
