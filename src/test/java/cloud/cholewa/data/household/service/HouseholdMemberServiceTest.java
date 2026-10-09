@@ -14,6 +14,7 @@ import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
+import cloud.cholewa.home.model.MemberPermission;
 import cloud.cholewa.home.model.MemberRole;
 import cloud.cholewa.home.model.RoomName;
 import org.junit.jupiter.api.Test;
@@ -49,7 +50,8 @@ class HouseholdMemberServiceTest {
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 8, 15, 12, 0);
 
     private static final HouseholdMemberEntity STORED = new HouseholdMemberEntity(
-        7L, CREATED_AT, null, "Ola", "+48111222333", true, MemberRole.ADMIN, List.of(RoomName.SANCTUM, RoomName.OFFICE)
+        7L, CREATED_AT, null, "Ola", "+48111222333", true, MemberRole.ADMIN,
+        List.of(RoomName.SANCTUM, RoomName.OFFICE), List.of(MemberPermission.HEATING_SWITCH)
     );
 
     private static final MemberDeviceEntity DEVICE = new MemberDeviceEntity(
@@ -81,9 +83,9 @@ class HouseholdMemberServiceTest {
     @Test
     void should_return_members_sorted_by_name() {
         when(repository.findAll()).thenReturn(Flux.just(
-            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of()),
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of(), List.of()),
             STORED,
-            new HouseholdMemberEntity(3L, CREATED_AT, null, "anna", "+48777666555", true, MemberRole.RESIDENT, List.of())
+            new HouseholdMemberEntity(3L, CREATED_AT, null, "anna", "+48777666555", true, MemberRole.RESIDENT, List.of(), List.of())
         ));
         when(deviceRepository.findAll()).thenReturn(Flux.empty());
 
@@ -100,7 +102,7 @@ class HouseholdMemberServiceTest {
     void should_attach_devices_to_their_members() {
         when(repository.findAll()).thenReturn(Flux.just(
             STORED,
-            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of())
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of(), List.of())
         ));
         when(deviceRepository.findAll()).thenReturn(Flux.just(
             new MemberDeviceEntity(1L, CREATED_AT, null, 7L, "iPhone", "aa:bb:cc:dd:ee:01"),
@@ -123,14 +125,14 @@ class HouseholdMemberServiceTest {
     }
 
     //the repository answers the active members; what is asserted here is what leaves the service:
-    //name, role and rooms in their stored order, sorted like the registry, and no query for devices
+    //name, role, rooms and permissions as stored, sorted like the registry, and no query for devices
     @Test
     void should_return_profiles_of_active_members_without_reading_devices() {
         when(repository.findAllByActiveTrue()).thenReturn(Flux.just(
-            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of()),
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of(), List.of()),
             STORED,
             new HouseholdMemberEntity(3L, CREATED_AT, null, "anna", "+48777666555", true, MemberRole.RESIDENT,
-                List.of(RoomName.LOFT))
+                List.of(RoomName.LOFT), List.of())
         ));
 
         //whole profiles, compared field by field, off the real mapper: MapStruct fills every property
@@ -143,7 +145,8 @@ class HouseholdMemberServiceTest {
                 .containsExactly(
                     new HouseholdProfile().name("anna").role(MemberRole.RESIDENT).rooms(List.of(RoomName.LOFT)),
                     new HouseholdProfile().name("Ola").role(MemberRole.ADMIN)
-                        .rooms(List.of(RoomName.SANCTUM, RoomName.OFFICE)),
+                        .rooms(List.of(RoomName.SANCTUM, RoomName.OFFICE))
+                        .permissions(List.of(MemberPermission.HEATING_SWITCH)),
                     new HouseholdProfile().name("Zenon").role(MemberRole.RESIDENT).rooms(List.of())
                 ))
             .verifyComplete();
@@ -253,7 +256,7 @@ class HouseholdMemberServiceTest {
     @Test
     void should_keep_member_inactive_when_updating_without_active() {
         when(repository.findByNameIgnoreCase("Ola"))
-            .thenReturn(Mono.just(new HouseholdMemberEntity(7L, CREATED_AT, null, "Ola", "+48111222333", false, MemberRole.RESIDENT, List.of())));
+            .thenReturn(Mono.just(new HouseholdMemberEntity(7L, CREATED_AT, null, "Ola", "+48111222333", false, MemberRole.RESIDENT, List.of(), List.of())));
         when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
         when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.empty());
 
@@ -391,7 +394,7 @@ class HouseholdMemberServiceTest {
     void should_return_role_and_rooms_of_members() {
         when(repository.findAll()).thenReturn(Flux.just(
             STORED,
-            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of())
+            new HouseholdMemberEntity(2L, CREATED_AT, null, "Zenon", "+48999888777", true, MemberRole.RESIDENT, List.of(), List.of())
         ));
         when(deviceRepository.findAll()).thenReturn(Flux.empty());
 
@@ -514,6 +517,8 @@ class HouseholdMemberServiceTest {
         final HouseholdMemberEntity saved = savedEntity();
         assertThat(saved.getRole()).isEqualTo(MemberRole.ADMIN);
         assertThat(saved.getRooms()).containsExactly(RoomName.SANCTUM, RoomName.OFFICE);
+        //an update of a phone number must not take a permission away
+        assertThat(saved.getPermissions()).containsExactly(MemberPermission.HEATING_SWITCH);
     }
 
     @Test
@@ -568,6 +573,7 @@ class HouseholdMemberServiceTest {
         assertThat(saved.isActive()).isTrue();
         assertThat(saved.getRole()).isEqualTo(MemberRole.ADMIN);
         assertThat(saved.getRooms()).containsExactly(RoomName.GARAGE, RoomName.LIVING_ROOM, RoomName.OFFICE);
+        assertThat(saved.getPermissions()).containsExactly(MemberPermission.HEATING_SWITCH);
     }
 
     @Test
@@ -634,6 +640,167 @@ class HouseholdMemberServiceTest {
         final HouseholdMemberEntity saved = savedEntity();
         assertThat(saved.getRole()).isEqualTo(MemberRole.ADMIN);
         assertThat(saved.getRooms()).containsExactly(RoomName.SANCTUM, RoomName.OFFICE);
+        assertThat(saved.getPermissions()).containsExactly(MemberPermission.HEATING_SWITCH);
+    }
+
+    //---- permissions (V12): granted one member at a time, replaced as a whole ----
+
+    @Test
+    void should_return_permissions_of_members() {
+        when(repository.findAll()).thenReturn(Flux.just(STORED));
+        when(deviceRepository.findAll()).thenReturn(Flux.empty());
+
+        sut.getAllHouseholdMembers()
+            .as(StepVerifier::create)
+            .assertNext(members ->
+                assertThat(members.getFirst().getPermissions()).containsExactly(MemberPermission.HEATING_SWITCH))
+            .verifyComplete();
+    }
+
+    @Test
+    void should_add_member_without_permissions_when_none_is_sent() {
+        when(repository.existsByNameIgnoreCase("Jan")).thenReturn(Mono.just(false));
+        when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+        //built with the Lombok builder: no list at all, as for the rooms
+        sut.addHouseholdMember(MEMBER)
+            .as(StepVerifier::create)
+            .assertNext(added -> assertThat(added.getPermissions()).isEmpty())
+            .verifyComplete();
+
+        assertThat(savedEntity().getPermissions()).isEmpty();
+    }
+
+    @Test
+    void should_add_member_with_the_permissions_sent() {
+        when(repository.existsByNameIgnoreCase("Jan")).thenReturn(Mono.just(false));
+        when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+        sut.addHouseholdMember(new HouseholdMember()
+                .name("Jan")
+                .phone("+48444555666")
+                .addPermissionsItem(MemberPermission.HEATING_SWITCH))
+            .as(StepVerifier::create)
+            .assertNext(added -> assertThat(added.getPermissions()).containsExactly(MemberPermission.HEATING_SWITCH))
+            .verifyComplete();
+
+        assertThat(savedEntity().getPermissions()).containsExactly(MemberPermission.HEATING_SWITCH);
+    }
+
+    @Test
+    void should_reject_new_member_with_a_permission_listed_twice_before_any_query() {
+        sut.addHouseholdMember(new HouseholdMember()
+                .name("Jan")
+                .phone("+48444555666")
+                .addPermissionsItem(MemberPermission.HEATING_SWITCH)
+                .addPermissionsItem(MemberPermission.HEATING_SWITCH))
+            .as(StepVerifier::create)
+            .expectErrorMatches(throwable -> throwable instanceof InvalidHouseholdMemberException
+                && throwable.getMessage().equals("Permission [heating_switch] is listed more than once"))
+            .verify();
+
+        verifyNoInteractions(repository);
+    }
+
+    //the SDK model cannot tell "no permissions sent" from "none": honoured here, every update of a
+    //phone number would take them away - and one that named them would grant them through the side door
+    @Test
+    void should_ignore_permissions_sent_with_an_update() {
+        final HouseholdMemberEntity withoutPermission = new HouseholdMemberEntity(
+            7L, CREATED_AT, null, "Ola", "+48111222333", true, MemberRole.RESIDENT, List.of(), List.of());
+        when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(withoutPermission));
+        when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.empty());
+
+        sut.updateHouseholdMember("Ola", new HouseholdMember()
+                .name("Ola")
+                .phone("+48111222333")
+                .addPermissionsItem(MemberPermission.HEATING_SWITCH))
+            .as(StepVerifier::create)
+            .assertNext(updated -> assertThat(updated.getPermissions()).isEmpty())
+            .verifyComplete();
+
+        assertThat(savedEntity().getPermissions()).isEmpty();
+    }
+
+    @Test
+    void should_replace_permissions_of_stored_row_and_keep_everything_else() {
+        final HouseholdMemberEntity withoutPermission = new HouseholdMemberEntity(
+            7L, CREATED_AT, null, "Ola", "+48111222333", true, MemberRole.RESIDENT, List.of(RoomName.LOFT), List.of());
+        when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(withoutPermission));
+        when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.just(DEVICE));
+
+        sut.replacePermissions("Ola", List.of(MemberPermission.HEATING_SWITCH))
+            .as(StepVerifier::create)
+            .assertNext(member -> {
+                assertThat(member.getPermissions()).containsExactly(MemberPermission.HEATING_SWITCH);
+                assertThat(member.getDevices()).hasSize(1);
+            })
+            .verifyComplete();
+
+        final HouseholdMemberEntity saved = savedEntity();
+        assertThat(saved.getId()).isEqualTo(7L);
+        assertThat(saved.getCreatedAt()).isEqualTo(CREATED_AT);
+        assertThat(saved.getUpdatedAt()).isNotNull();
+        assertThat(saved.getName()).isEqualTo("Ola");
+        assertThat(saved.getPhone()).isEqualTo("+48111222333");
+        assertThat(saved.isActive()).isTrue();
+        assertThat(saved.getRole()).isEqualTo(MemberRole.RESIDENT);
+        assertThat(saved.getRooms()).containsExactly(RoomName.LOFT);
+        assertThat(saved.getPermissions()).containsExactly(MemberPermission.HEATING_SWITCH);
+    }
+
+    @Test
+    void should_take_every_permission_away_when_replaced_with_an_empty_list() {
+        when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(STORED));
+        when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.empty());
+
+        sut.replacePermissions("Ola", List.of())
+            .as(StepVerifier::create)
+            .assertNext(member -> assertThat(member.getPermissions()).isEmpty())
+            .verifyComplete();
+
+        final HouseholdMemberEntity saved = savedEntity();
+        assertThat(saved.getPermissions()).isEmpty();
+        assertThat(saved.getRooms()).containsExactly(RoomName.SANCTUM, RoomName.OFFICE);
+    }
+
+    @Test
+    void should_reject_replacing_permissions_with_a_repeated_one_before_looking_the_member_up() {
+        sut.replacePermissions("Ola", List.of(MemberPermission.HEATING_SWITCH, MemberPermission.HEATING_SWITCH))
+            .as(StepVerifier::create)
+            .expectErrorMatches(throwable -> throwable instanceof InvalidHouseholdMemberException
+                && throwable.getMessage().equals("Permission [heating_switch] is listed more than once"))
+            .verify();
+
+        verify(repository, never()).findByNameIgnoreCase(anyString());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void should_reject_replacing_permissions_with_a_null_among_them() {
+        sut.replacePermissions("Ola", Arrays.asList((MemberPermission) null))
+            .as(StepVerifier::create)
+            .expectErrorMatches(throwable -> throwable instanceof InvalidHouseholdMemberException
+                && throwable.getMessage().equals("A permission must not be null"))
+            .verify();
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void should_return_error_when_replacing_permissions_of_unknown_member() {
+        when(repository.findByNameIgnoreCase(anyString())).thenReturn(Mono.empty());
+
+        sut.replacePermissions("Nobody", List.of(MemberPermission.HEATING_SWITCH))
+            .as(StepVerifier::create)
+            .expectErrorMatches(throwable -> throwable instanceof HouseholdMemberNotFoundException
+                && throwable.getMessage().equals("No household member named [Nobody]"))
+            .verify();
+
+        verify(repository, never()).save(any());
     }
 
     private HouseholdMemberEntity savedEntity() {

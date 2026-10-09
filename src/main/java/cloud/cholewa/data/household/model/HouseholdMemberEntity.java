@@ -1,5 +1,6 @@
 package cloud.cholewa.data.household.model;
 
+import cloud.cholewa.home.model.MemberPermission;
 import cloud.cholewa.home.model.MemberRole;
 import cloud.cholewa.home.model.RoomName;
 import lombok.Value;
@@ -10,7 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 //no constraint annotations: nothing validates an entity, and the rules are stated where they are
-//enforced - the SDK model at the API, the checks of the schema (V8-V11) in the database
+//enforced - the SDK model at the API, the checks of the schema (V8-V12) in the database
 @Value
 @Table(name = "household_members")
 public class HouseholdMemberEntity {
@@ -37,4 +38,8 @@ public class HouseholdMemberEntity {
     //names of the constants, like the role: a constant renamed or removed in the SDK needs a migration
     //of the rows that hold it, or reading the registry fails on them
     List<RoomName> rooms;
+
+    //an array column (V12), like the rooms: never null, empty for a member nobody granted anything to,
+    //stored as the names of the constants
+    List<MemberPermission> permissions;
 }

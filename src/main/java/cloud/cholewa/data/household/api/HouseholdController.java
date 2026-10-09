@@ -4,6 +4,7 @@ import cloud.cholewa.data.household.service.HouseholdMemberService;
 import cloud.cholewa.data.household.service.MemberDeviceService;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.HouseholdProfile;
+import cloud.cholewa.home.model.MemberPermission;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import cloud.cholewa.home.model.RoomName;
 import jakarta.validation.Valid;
@@ -42,8 +43,8 @@ public class HouseholdController {
             .map(ResponseEntity::ok);
     }
 
-    //for the web dashboard, which every browser in the house opens: the active members with their role
-    //and rooms, and nothing else of the registry - no phone, no devices
+    //for the web dashboard, which every browser in the house opens: the active members with their role,
+    //rooms and permissions, and nothing else of the registry - no phone, no devices
     @GetMapping("/profiles")
     Mono<ResponseEntity<List<HouseholdProfile>>> getHouseholdProfiles() {
         return householdService.getHouseholdProfiles()
@@ -81,6 +82,17 @@ public class HouseholdController {
         @RequestBody final List<RoomName> rooms
     ) {
         return householdService.replaceRooms(name, rooms)
+            .map(ResponseEntity::ok);
+    }
+
+    //everything the member may do beyond their role; [] takes it all away. PUT, not PATCH: the list is
+    //replaced, never merged
+    @PutMapping("/member/{name}/permissions")
+    Mono<ResponseEntity<HouseholdMember>> replaceHouseholdMemberPermissions(
+        @PathVariable final String name,
+        @RequestBody final List<MemberPermission> permissions
+    ) {
+        return householdService.replacePermissions(name, permissions)
             .map(ResponseEntity::ok);
     }
 

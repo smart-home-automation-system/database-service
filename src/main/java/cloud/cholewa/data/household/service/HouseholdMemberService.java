@@ -11,6 +11,7 @@ import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.HouseholdProfile;
+import cloud.cholewa.home.model.MemberPermission;
 import cloud.cholewa.home.model.MemberPhoneDetails;
 import cloud.cholewa.home.model.RoomName;
 import lombok.RequiredArgsConstructor;
@@ -69,14 +70,17 @@ public class HouseholdMemberService {
     public Mono<HouseholdMember> addHouseholdMember(final HouseholdMember householdMember) {
         //the rooms first: a refused list runs no query. What is stored is the checked list, the same
         //one a replacement of the rooms stores - not a second reading of the payload
-        return Mono.fromCallable(() -> checkedRooms(householdMember.getRooms()))
-            .flatMap(rooms -> householdMemberRepository.existsByNameIgnoreCase(householdMember.getName())
+        return Mono.fromCallable(() -> householdMemberMapper.toEntity(
+                householdMember,
+                checkedRooms(householdMember.getRooms()),
+                checkedPermissions(householdMember.getPermissions())
+            ))
+            .flatMap(entity -> householdMemberRepository.existsByNameIgnoreCase(householdMember.getName())
                 .filter(Boolean::booleanValue)
                 .flatMap(exists ->
                     Mono.<HouseholdMember>error(nameTaken(householdMember.getName())))
                 .switchIfEmpty(Mono.defer(() ->
-                    Mono.just(householdMemberMapper.toEntity(householdMember, rooms))
-                        .flatMap(householdMemberRepository::save)
+                    householdMemberRepository.save(entity)
                         .onErrorMap(DuplicateKeyException.class, e -> duplicateMember(e, householdMember))
                         //a new member has no devices yet - the ones in the payload are ignored
                         .map(saved -> withDevices(saved, List.of())))));
@@ -103,6 +107,17 @@ public class HouseholdMemberService {
         return Mono.fromCallable(() -> checkedRooms(rooms))
             .flatMap(checked -> findMember(name)
                 .map(existing -> householdMemberMapper.withRooms(existing, checked)))
+            .flatMap(householdMemberRepository::save)
+            .flatMap(this::withStoredDevices);
+    }
+
+    //an operation of its own, for the reason the rooms have one: the SDK model starts with an empty
+    //list, so an update that left the permissions out would take them away. The list replaces the
+    //stored one; an empty list leaves the member with what their role gives them and nothing more
+    public Mono<HouseholdMember> replacePermissions(final String name, final List<MemberPermission> permissions) {
+        return Mono.fromCallable(() -> checkedPermissions(permissions))
+            .flatMap(checked -> findMember(name)
+                .map(existing -> householdMemberMapper.withPermissions(existing, checked)))
             .flatMap(householdMemberRepository::save)
             .flatMap(this::withStoredDevices);
     }
@@ -159,6 +174,24 @@ public class HouseholdMemberService {
             }
         }
         return List.copyOf(rooms);
+    }
+
+    //the same two checks as for the rooms, and for the same reason: the model is a plain list
+    private static List<MemberPermission> checkedPermissions(final List<MemberPermission> permissions) {
+        if (permissions == null) {
+            return List.of();
+        }
+        final Set<MemberPermission> seen = EnumSet.noneOf(MemberPermission.class);
+        for (final MemberPermission permission : permissions) {
+            if (permission == null) {
+                throw new InvalidHouseholdMemberException("A permission must not be null");
+            }
+            if (!seen.add(permission)) {
+                throw new InvalidHouseholdMemberException(
+                    "Permission [" + permission.getValue() + "] is listed more than once");
+            }
+        }
+        return List.copyOf(permissions);
     }
 
     private static HouseholdException nameTaken(final String name) {

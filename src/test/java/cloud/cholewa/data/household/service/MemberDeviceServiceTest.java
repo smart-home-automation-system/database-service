@@ -40,7 +40,7 @@ class MemberDeviceServiceTest {
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 8, 15, 12, 0);
 
     private static final HouseholdMemberEntity MEMBER = new HouseholdMemberEntity(
-        7L, CREATED_AT, null, "Ola", "+48111222333", true, MemberRole.RESIDENT, List.of()
+        7L, CREATED_AT, null, "Ola", "+48111222333", true, MemberRole.RESIDENT, List.of(), List.of()
     );
 
     private static final MemberDeviceEntity STORED_DEVICE = new MemberDeviceEntity(
