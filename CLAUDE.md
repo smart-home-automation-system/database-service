@@ -40,7 +40,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **Addressing by natural keys.** Members by `name`, devices by `mac` — both unique in the
   schema. No surrogate id is exposed; the SDK models have none. Keep it that way rather than
   adding ids a client would first have to look up.
-- **Bodies are the SDK models** `HouseholdMember` / `MemberPhoneDetails` (smart-home-sdk ≥ 1.5.0)
+- **Bodies are the SDK models** `HouseholdMember` / `MemberPhoneDetails` (smart-home-sdk ≥ 1.6.0)
   with `@Valid`: name 3–50, phone E.164 (`+48505602702`), device name ≤ 50, MAC lowercase and
   colon-separated. The same bounds are in the schema (`V8`, phone since `V9`); change them in the
   SDK and in a new migration together.
@@ -118,9 +118,26 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **Member responses carry the member's devices** (POST/PATCH/activate/deactivate, like GET), so a
   client replacing its cached member with a response does not lose them; devices in a member
   payload are ignored — they are managed through the device endpoints.
+- **Permissions** (HAS-202, `V12`) — what a member may do in the dashboard beyond their role,
+  first of all `heating_switch`. They are **the rooms once more**: a `TEXT[]` column of
+  constant names, a list the SDK model cannot tell from "not sent", so `PATCH` ignores them,
+  `POST` takes those of a new member, and **`PUT /member/{name}/permissions`** replaces them
+  (`checkedPermissions`: one listed twice or a `null` is a 400 `INVALID_HOUSEHOLD_MEMBER`).
+  Three things beyond the rooms:
+  - **`withPermissions` is the fourth mapper that copies a row** (`toUpdatedEntity`,
+    `withActive`, `withRooms`): each names every column, and a column forgotten in one of them
+    is written as `null` by that operation — here it would take a permission away on a change
+    of a phone number. The service tests assert the permission after each of the four.
+  - **A new value of `MemberPermission` must reach every reader before it is stored.**
+    `presence-service` reads the whole registry in one call and fails on a value its SDK does
+    not know. Today it is on an SDK without the field and ignores it; from the day it has the
+    field, grant a new permission only after it runs the release that knows it.
+  - **A rollout is safe both ways** (rehearsed on a throwaway PostgreSQL): the released version
+    reads and writes next to the new column - its statements name their own columns - and a
+    permission granted by the new pod survives a `PATCH` through the old one.
 - **`GET /household/profiles` is the read of the web dashboard** (HAS-211) — every browser in
-  the house calls it, at every start. It answers the **active** members with `name`, `role`
-  and `rooms` as `HouseholdProfile`, a model with no phone and no devices. Three rules:
+  the house calls it, at every start. It answers the **active** members with `name`, `role`,
+  `rooms` and `permissions` as `HouseholdProfile`, a model with no phone and no devices. Three rules:
   - **Nothing else may ever be added to that body.** The model has no field for it (pinned in
     the SDK), and `should_return_profiles_of_active_members_without_reading_devices` compares
     whole profiles off the real mapper — MapStruct copies every property two classes share by

@@ -96,9 +96,15 @@ Since 0.9.0 a member also has a **role** (`admin` or `resident`) and **rooms** (
 - The rooms come back in the order they were given — the order they are shown in. **A member
   without rooms has no `rooms` field at all** (empty lists are left out, like `devices`): read
   a missing `rooms` as none.
-- Each of the three things an update could change by accident has an operation of its own:
-  `active` (activate / deactivate), the rooms (`PUT …/rooms`) and the devices. `PATCH` changes
-  the name, the phone and — only when the body names one — the role.
+- A member can also have **permissions** — what they may do in the dashboard beyond their
+  role, e.g. `"permissions": ["heating_switch"]`: the switch of the heating of the whole house
+  on their own page. Nobody has one until it is granted; like the rooms, an empty list is left
+  out of the answer. A permission decides what the dashboard offers and nothing more — no
+  service checks it.
+- Each of the four things an update could change by accident has an operation of its own:
+  `active` (activate / deactivate), the rooms (`PUT …/rooms`), the permissions
+  (`PUT …/permissions`) and the devices. `PATCH` changes the name, the phone and — only when
+  the body names one — the role.
 - Send the changes of one member **one after the other**: each call writes the whole member
   from what it read a moment before, so a `PATCH` and a `PUT …/rooms` running at the same
   time can undo each other.
@@ -106,10 +112,11 @@ Since 0.9.0 a member also has a **role** (`admin` or `resident`) and **rooms** (
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/home/household` | All members sorted by name, each with its `role`, `rooms` and `devices`. `200 OK` with `[]` while the registry is empty. |
-| `GET` | `/home/household/profiles` | What the web dashboard needs, and nothing else: the **active** members sorted by name, each with `name`, `role` and `rooms` (`HouseholdProfile`; `rooms` left out when empty) — **no phone, no devices**. This is the read every browser in the house makes; a member who is switched off is not in it. `200 OK` with `[]` when nobody is active. |
-| `POST` | `/home/household/member` | Register a member (`HouseholdMember`; `devices` in the body are ignored). Always created active; a `resident` unless the body says `"role": "admin"`; with the `rooms` of the body, if any. `201 Created`; `409 Conflict` when the name (in any letter case — `anna` clashes with `Anna`) or the phone is taken; `400` for an unknown role or room, or a room listed twice. |
-| `PATCH` | `/home/household/member/{name}` | Change a member's name and phone, and the role when the body has one — without `role` (or with `null`) the member keeps theirs. Keeps the member's activity and rooms — `active` and `rooms` in the body are ignored. `200 OK` with the member, their rooms and devices; `404` for an unknown member; `409` when the new name (in any letter case) or phone belongs to another member — changing only the case of the own name is fine; `400` for an unknown role. |
+| `GET` | `/home/household/profiles` | What the web dashboard needs, and nothing else: the **active** members sorted by name, each with `name`, `role`, `rooms` and `permissions` (`HouseholdProfile`; `rooms` and `permissions` left out when empty) — **no phone, no devices**. This is the read every browser in the house makes; a member who is switched off is not in it. `200 OK` with `[]` when nobody is active. |
+| `POST` | `/home/household/member` | Register a member (`HouseholdMember`; `devices` in the body are ignored). Always created active; a `resident` unless the body says `"role": "admin"`; with the `rooms` and the `permissions` of the body, if any. `201 Created`; `409 Conflict` when the name (in any letter case — `anna` clashes with `Anna`) or the phone is taken; `400` for an unknown role or room, or a room listed twice. |
+| `PATCH` | `/home/household/member/{name}` | Change a member's name and phone, and the role when the body has one — without `role` (or with `null`) the member keeps theirs. Keeps the member's activity, rooms and permissions — `active`, `rooms` and `permissions` in the body are ignored. `200 OK` with the member, their rooms and devices; `404` for an unknown member; `409` when the new name (in any letter case) or phone belongs to another member — changing only the case of the own name is fine; `400` for an unknown role. |
 | `PUT` | `/home/household/member/{name}/rooms` | Replace the member's rooms with the list in the body — a JSON array of room names in display order, e.g. `["sanctum", "office"]`; `[]` leaves the member without rooms. `200 OK` with the member; `404` for an unknown member; `400` for an unknown room, a room listed twice, `null` among them, or a body that is not an array. |
+| `PUT` | `/home/household/member/{name}/permissions` | Replace the member's permissions with the list in the body — a JSON array of `MemberPermission` values, e.g. `["heating_switch"]`; `[]` takes them all away. `200 OK` with the member; `404` for an unknown member; `400` for an unknown permission, one listed twice, `null` among them, or a body that is not an array. |
 | `DELETE` | `/home/household/member/{name}` | Remove a member together with their devices. `204 No Content`; `404` for an unknown member. |
 | `POST` | `/home/household/member/{name}/activate` | Mark a member active. `200 OK` with the member and their devices; `404` for an unknown member. |
 | `POST` | `/home/household/member/{name}/deactivate` | Mark a member inactive, e.g. while away for longer. `200 OK` with the member and their devices; `404` for an unknown member. |
@@ -151,7 +158,7 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `UNKNOWN_GATEWAY` | 400 | `gateway` is not one of the known values |
 | `NOT_FOUND_HOUSEHOLD_MEMBER` | 404 | no member of that name |
 | `HOUSEHOLD_CONFLICT` | 409 | the name or the phone belongs to another member |
-| `INVALID_HOUSEHOLD_MEMBER` | 400 | the rooms list a room twice, or contain `null` |
+| `INVALID_HOUSEHOLD_MEMBER` | 400 | the rooms list a room twice, or contain `null`; the same for the permissions |
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 
@@ -191,3 +198,6 @@ does not know: the value fails while the body is read, and the answer is a `400`
   order — the rooms of a member are only ever read and replaced as a whole. The schema refuses
   a `NULL` among them; that a room is listed once is checked by the service, which can say so
   in its answer.
+- **Permissions** (`V12`): `household_members.permissions`, an array column like the rooms,
+  holding the `MemberPermission` constants (`HEATING_SWITCH`); empty for every member until
+  one is granted.
