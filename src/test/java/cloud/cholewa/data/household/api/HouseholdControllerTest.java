@@ -25,12 +25,14 @@ import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import reactor.core.publisher.Mono;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -472,6 +474,42 @@ class HouseholdControllerTest {
             .expectStatus().isBadRequest();
 
         verifyNoInteractions(householdMemberService);
+    }
+
+    //the body is the list itself: a single value or an object is not one
+    @ParameterizedTest
+    @ValueSource(strings = {"\"heating_switch\"", "{\"permissions\": [\"heating_switch\"]}"})
+    void should_reject_replacing_permissions_with_a_body_that_is_not_an_array(final String body) {
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(body)
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].message").isEqualTo("Malformed request body");
+
+        verifyNoInteractions(householdMemberService);
+    }
+
+    //Jackson reads [null] as a list holding a null - refusing it is the service's (checkedPermissions),
+    //so what has to hold here is that the null arrives there and is not dropped on the way
+    @Test
+    void should_hand_a_null_among_the_permissions_on_to_the_service_that_refuses_it() {
+        when(householdMemberService.replacePermissions(eq("Ola"), any())).thenReturn(Mono.error(
+            new InvalidHouseholdMemberException("A permission must not be null")));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("[null]")
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].details").isEqualTo("A permission must not be null")
+            .jsonPath("$.errors[0].code").isEqualTo("INVALID_HOUSEHOLD_MEMBER");
+
+        verify(householdMemberService).replacePermissions("Ola", Arrays.asList((MemberPermission) null));
     }
 
     @Test

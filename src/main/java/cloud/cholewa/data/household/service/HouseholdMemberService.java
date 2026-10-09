@@ -68,8 +68,8 @@ public class HouseholdMemberService {
     }
 
     public Mono<HouseholdMember> addHouseholdMember(final HouseholdMember householdMember) {
-        //the rooms first: a refused list runs no query. What is stored is the checked list, the same
-        //one a replacement of the rooms stores - not a second reading of the payload
+        //the rooms and the permissions first: a refused list runs no query. What is stored are the
+        //checked lists, the same ones a replacement stores - not a second reading of the payload
         return Mono.fromCallable(() -> householdMemberMapper.toEntity(
                 householdMember,
                 checkedRooms(householdMember.getRooms()),
