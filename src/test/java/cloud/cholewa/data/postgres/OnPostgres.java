@@ -1,5 +1,7 @@
 package cloud.cholewa.data.postgres;
 
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,6 +14,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +38,12 @@ import java.util.Map;
 @Testcontainers(disabledWithoutDocker = true)
 abstract class OnPostgres {
 
+    //A query that gets no answer must fail its test, not hold the build until the build server
+    //gives up. Far above anything a statement takes here (milliseconds), far below that
+    private static final Duration PATIENCE = Duration.ofSeconds(30);
+
+    private static PostgreSQLContainer container;
+
     @Autowired
     protected DatabaseClient databaseClient;
 
@@ -44,7 +53,7 @@ abstract class OnPostgres {
     //default of the library is REQUIRE
     @DynamicPropertySource
     static void connectToTheContainer(final DynamicPropertyRegistry registry) {
-        final PostgreSQLContainer postgres = Database.CONTAINER;
+        final PostgreSQLContainer postgres = postgres();
 
         registry.add("database.host", postgres::getHost);
         registry.add("database.port", () -> postgres.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT));
@@ -59,8 +68,29 @@ abstract class OnPostgres {
         registry.add("spring.flyway.password", postgres::getPassword);
     }
 
-    static PostgreSQLContainer postgres() {
-        return Database.CONTAINER;
+    //Started on first use, which is after JUnit has decided that the class runs at all. A start
+    //that fails is tried again by the next class and reports its own reason each time - a static
+    //initializer would report it once and a NoClassDefFoundError ever after.
+    //The major version of the rehearsals of V11 and V12; alpine for the size of the download
+    static synchronized PostgreSQLContainer postgres() {
+        if (container == null) {
+            final PostgreSQLContainer starting = new PostgreSQLContainer("postgres:17-alpine");
+            starting.start();
+            container = starting;
+        }
+        return container;
+    }
+
+    //the limit of every StepVerifier of these classes, theirs alone: given back after each class,
+    //the other tests of the build keep the default
+    @BeforeAll
+    static void boundEveryVerification() {
+        StepVerifier.setDefaultTimeout(PATIENCE);
+    }
+
+    @AfterAll
+    static void unboundTheVerifications() {
+        StepVerifier.resetDefaultTimeout();
     }
 
     //the devices go with their members (ON DELETE CASCADE)
@@ -75,7 +105,7 @@ abstract class OnPostgres {
     }
 
     protected List<Map<String, Object>> rows(final String sql) {
-        return databaseClient.sql(sql).fetch().all().collectList().block();
+        return databaseClient.sql(sql).fetch().all().collectList().block(PATIENCE);
     }
 
     protected Map<String, Object> row(final String sql) {
@@ -84,18 +114,5 @@ abstract class OnPostgres {
             throw new AssertionError("Expected one row, got " + rows.size() + " for: " + sql);
         }
         return rows.getFirst();
-    }
-
-    //started on first use, which is after JUnit has decided that the class runs at all
-    private static final class Database {
-
-        //the major version of the rehearsals of V11 and V12; alpine for the size of the download
-        private static final PostgreSQLContainer CONTAINER = start();
-
-        private static PostgreSQLContainer start() {
-            final PostgreSQLContainer container = new PostgreSQLContainer("postgres:17-alpine");
-            container.start();
-            return container;
-        }
     }
 }

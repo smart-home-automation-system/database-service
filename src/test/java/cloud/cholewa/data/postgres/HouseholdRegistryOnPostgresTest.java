@@ -174,6 +174,9 @@ class HouseholdRegistryOnPostgresTest extends OnPostgres {
 
         assertThat(storedMember("Anna"))
             .containsEntry("role", "RESIDENT")
+            //still active: a mapper that lost the column would write false, the value of a boolean
+            //nobody set - which the test above, on a member who is switched off, cannot see
+            .containsEntry("active", true)
             .containsEntry("rooms", "OFFICE,LIVING_ROOM,LOFT")
             .containsEntry("permissions", "HEATING_SWITCH");
     }
@@ -207,14 +210,15 @@ class HouseholdRegistryOnPostgresTest extends OnPostgres {
 
         assertThat(storedMember("Anna"))
             .containsEntry("rooms", "")
+            //an active member stays active, see should_change_the_role_only_when_the_update_names_one
+            .containsEntry("active", true)
             .containsEntry("permissions", "HEATING_SWITCH");
     }
 
     @Test
     void should_replace_the_permissions_and_keep_every_other_column() {
         add(anna());
-        deactivate("Anna");
-        final Map<String, Object> before = storedMember("Anna");
+        final Map<String, Object> active = storedMember("Anna");
 
         householdMemberService.replacePermissions("Anna", List.of())
             .as(StepVerifier::create)
@@ -223,8 +227,25 @@ class HouseholdRegistryOnPostgresTest extends OnPostgres {
 
         assertThat(storedMember("Anna"))
             .containsEntry("permissions", "")
+            .containsEntry("active", true)
             .satisfies(after -> assertUnchanged(
-                before, after, "id", "created_at", "name", "phone", "active", "role", "rooms"));
+                active, after, "id", "created_at", "name", "phone", "active", "role", "rooms"));
+
+        //and once more for a member who is switched off: neither state of the activity may be the
+        //one the operation writes by itself
+        deactivate("Anna");
+        final Map<String, Object> switchedOff = storedMember("Anna");
+
+        householdMemberService.replacePermissions("Anna", List.of(MemberPermission.HEATING_SWITCH))
+            .as(StepVerifier::create)
+            .expectNextCount(1)
+            .verifyComplete();
+
+        assertThat(storedMember("Anna"))
+            .containsEntry("permissions", "HEATING_SWITCH")
+            .containsEntry("active", false)
+            .satisfies(after -> assertUnchanged(
+                switchedOff, after, "id", "created_at", "name", "phone", "active", "role", "rooms"));
         assertOneMember();
     }
 
@@ -274,15 +295,16 @@ class HouseholdRegistryOnPostgresTest extends OnPostgres {
 
     @Test
     void should_read_the_whole_registry_with_the_devices_of_every_member() {
-        add(HouseholdMember.builder().name("borys").phone(BORYS_PHONE).active(true).build());
-        add(anna());
-        addDevice("Anna", IPHONE);
-        addDevice("Anna", MemberPhoneDetails.builder().name("Watch").mac("aa:bb:cc:dd:ee:03").build());
-        addDevice("borys", MemberPhoneDetails.builder().name("iPhone").mac("aa:bb:cc:dd:ee:04").build());
+        add(HouseholdMember.builder().name("Borys").phone(BORYS_PHONE).active(true).build());
+        add(admin("anna"));
+        addDevice("anna", IPHONE);
+        addDevice("anna", MemberPhoneDetails.builder().name("Watch").mac("aa:bb:cc:dd:ee:03").build());
+        addDevice("Borys", MemberPhoneDetails.builder().name("iPhone").mac("aa:bb:cc:dd:ee:04").build());
 
         householdMemberService.getAllHouseholdMembers().as(StepVerifier::create)
             .assertNext(members -> {
-                assertThat(members).extracting(HouseholdMember::getName).containsExactly("Anna", "borys");
+                //whatever the letter case: by the natural order of strings "Borys" would come first
+                assertThat(members).extracting(HouseholdMember::getName).containsExactly("anna", "Borys");
                 assertThat(members.getFirst().getRooms()).containsExactlyElementsOf(ROOMS);
                 //by name, capitals first
                 assertThat(members.getFirst().getDevices())
@@ -507,8 +529,12 @@ class HouseholdRegistryOnPostgresTest extends OnPostgres {
     // ---- helpers
 
     private static HouseholdMember anna() {
+        return admin("Anna");
+    }
+
+    private static HouseholdMember admin(final String name) {
         return HouseholdMember.builder()
-            .name("Anna")
+            .name(name)
             .phone(ANNA_PHONE)
             .active(true)
             .role(MemberRole.ADMIN)

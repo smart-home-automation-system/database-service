@@ -2,9 +2,12 @@ package cloud.cholewa.data.postgres;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 
@@ -16,6 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 //release would have left - a migration that only works on an empty table fails here, not on the
 //database of the house.
 class SchemaMigrationOnPostgresTest extends OnPostgres {
+
+    @Autowired
+    private Flyway flyway;
 
     @Test
     void should_have_applied_every_migration_of_the_service_to_an_empty_database() throws IOException {
@@ -29,6 +35,15 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
         assertThat(applied)
             .hasSize(migrations)
             .allSatisfy(migration -> assertThat(migration).containsEntry("success", true));
+    }
+
+    //the rehearsals drop schemas, and they take their connection from the Flyway of the
+    //application: it has to be the one to the container
+    @Test
+    void should_run_the_flyway_of_the_application_on_the_container_and_nowhere_else() throws SQLException {
+        try (Connection connection = flyway.getConfiguration().getDataSource().getConnection()) {
+            assertThat(connection.getMetaData().getURL()).isEqualTo(postgres().getJdbcUrl());
+        }
     }
 
     //the services tell one duplicate from another by these names; renamed in a migration, a
@@ -53,6 +68,7 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
     @Test
     void should_carry_a_member_registered_before_the_phone_format_the_roles_and_the_rooms_through_the_migrations() {
         final String schema = "rehearsal_household";
+        startOver(schema);
         migrate(schema, "8");
         execute("""
             INSERT INTO %1$s.household_members (created_at, name, phone) VALUES (now(), 'Anna', '505-602-702');
@@ -77,6 +93,7 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
     @Test
     void should_keep_the_older_of_two_configurations_of_one_point_when_they_become_unique() {
         final String schema = "rehearsal_eaton";
+        startOver(schema);
         migrate(schema, "6");
         execute("""
             INSERT INTO %1$s.eaton_devices (created_at, point, room, type, gateway) VALUES
@@ -91,11 +108,20 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsExactly("OFFICE", "LOFT");
     }
 
-    //the migrations name no schema, so Flyway can run them in any: its own history table goes there too
-    private static void migrate(final String schema, final String target) {
+    //the container outlives the test, and with it the schema of an earlier run in the same JVM
+    private void startOver(final String schema) {
+        execute("DROP SCHEMA IF EXISTS %s CASCADE".formatted(schema));
+    }
+
+    //The Flyway of the application once more, with nothing changed but the schema and the version
+    //it stops at - so a rehearsal runs the migrations the way a start of the service does, whatever
+    //spring.flyway.* comes to say. The migrations name no schema, so they run in any; the history
+    //table of Flyway goes there too
+    private void migrate(final String schema, final String target) {
         Flyway.configure()
-            .dataSource(postgres().getJdbcUrl(), postgres().getUsername(), postgres().getPassword())
+            .configuration(flyway.getConfiguration())
             .schemas(schema)
+            .defaultSchema(schema)
             .target(target)
             .load()
             .migrate();

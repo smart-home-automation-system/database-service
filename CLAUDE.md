@@ -252,12 +252,15 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   migration from empty, and the ones that change rows over rows written before them); the
   rehearsal is still the only check of **the released version running next to the new
   schema**, which is what a rolling deploy does.
-- **`database.ssl-mode` does switch the SSL off** — the tests on PostgreSQL connect to a
-  container without SSL with `database.ssl-mode=disable`. In the rehearsal of HAS-192
-  `-Ddatabase.ssl-mode=DISABLE` given to `docker run` had no effect; the likely reason (not
-  re-run on that image) is the `ENTRYPOINT`, `java … -jar application.jar`: what follows the
-  image name lands after `-jar`, as a program argument, where `-D` means nothing. For an
-  image it is `--database.ssl-mode=disable` or the environment variable `DATABASE_SSLMODE`.
+- **`database.ssl-mode` set to `disable` switches SSL off in the pooled connection factory** —
+  that much the tests on PostgreSQL prove: they reach a container without SSL through the
+  `ConnectionFactory` of `cholewa-commons` with that property. Nothing more is proven. In the
+  rehearsal of HAS-192 `-Ddatabase.ssl-mode=DISABLE` given to `docker run` had no effect, and
+  why is **a guess, not re-run on that image**: the `ENTRYPOINT` is
+  `java … -jar application.jar`, so what follows the image name lands after `-jar`, as a
+  program argument, where `-D` means nothing — which would make it
+  `--database.ssl-mode=disable`, or the environment variable `DATABASE_SSLMODE`, for an image.
+  Try that before the next rehearsal relies on it.
 - **A local run talks to the production database.** The `local` profile itself carries no
   connection properties; the IDEA run configuration (`home,local`) loads them from an env file
   outside the repo, and that file points at the managed production database. A local run
