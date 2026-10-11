@@ -80,9 +80,9 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     `eaton_devices`; the API speaks the SDK values (`admin`, `living room`). `rooms` is a
     PostgreSQL **array column** (`TEXT[]`) mapped to `List<RoomName>` — Spring Data R2DBC
     converts both ways, an empty list is `{}`. A response leaves an empty `rooms` out
-    (`NON_EMPTY`). **No test covers that mapping**: every service test mocks the repository,
-    so it is checked by the migration rehearsal (see Database & Flyway) and by the first calls
-    after a deploy — repeat one of the two after a Spring Boot bump.
+    (`NON_EMPTY`). The mapping is Spring Data's and the driver's, not code of this service —
+    `HouseholdRegistryOnPostgresTest` runs it on a real PostgreSQL (HAS-207; see Build, tests
+    & gotchas), which is what tells whether a Spring Boot bump kept it.
   - **A constant renamed or removed in the SDK breaks reading**: a row still holding the old
     name cannot be converted, and `GET /household` then fails for the whole registry (the same
     holds for `room`, `type` and `gateway` of `eaton_devices`). Such an SDK change comes with
@@ -127,7 +127,11 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   - **`withPermissions` is the fourth mapper that copies a row** (`toUpdatedEntity`,
     `withActive`, `withRooms`): each names every column, and a column forgotten in one of them
     is written as `null` by that operation — here it would take a permission away on a change
-    of a phone number. The service tests assert the permission after each of the four.
+    of a phone number. The service tests assert the permission after each of the four, and
+    `HouseholdRegistryOnPostgresTest` compares the stored row before and after each of them.
+    (What the database does with such a `null` today, seen there with a mapper broken on
+    purpose: `rooms` and `permissions` are `NOT NULL`, so the update is refused and the
+    operation fails — the grant is not lost silently. A nullable column would be.)
   - **A new value of `MemberPermission` must reach every reader before it is stored.**
     `presence-service` reads the whole registry in one call and fails on a value its SDK does
     not know. Today it is on an SDK without the field and ignores it; from the day it has the
@@ -145,8 +149,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     here. What the dashboard needs beyond a profile gets its own decision, not a field.
   - **Leaving out the switched-off members is this service's rule**: the model has no
     `active`, so a client cannot tell. The filter is the derived query `findAllByActiveTrue`,
-    which — like every query of the registry — no test executes (HAS-207); check it with a call
-    after a deploy.
+    run on a real PostgreSQL by `HouseholdRegistryOnPostgresTest` since HAS-207.
   - It reads the rows whole (the phone stops at the mapper) and never touches `member_devices`.
     A three-column projection would be a second, untested path for the `TEXT[]` rooms column.
   The full `GET /household` stays for `presence-service` and household administration; both
@@ -244,7 +247,20 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   the other four `--database-*` arguments given explicitly. That is the rollout in small: the
   new migration runs over rows the old version wrote. Two things it needs: the container must
   speak **SSL** (`ssl = on` with a self-signed certificate — `cholewa-commons` connects with
-  `sslMode` `REQUIRE`), and nothing may come from the IDEA env file.
+  `sslMode` `REQUIRE`), and nothing may come from the IDEA env file. Since HAS-207 the build
+  does the part of this that needs no released image (`SchemaMigrationOnPostgresTest`: every
+  migration from empty, and the ones that change rows over rows written before them); the
+  rehearsal is still the only check of **the released version running next to the new
+  schema**, which is what a rolling deploy does.
+- **`database.ssl-mode` set to `disable` switches SSL off in the pooled connection factory** —
+  that much the tests on PostgreSQL prove: they reach a container without SSL through the
+  `ConnectionFactory` of `cholewa-commons` with that property. Nothing more is proven. In the
+  rehearsal of HAS-192 `-Ddatabase.ssl-mode=DISABLE` given to `docker run` had no effect, and
+  why is **a guess, not re-run on that image**: the `ENTRYPOINT` is
+  `java … -jar application.jar`, so what follows the image name lands after `-jar`, as a
+  program argument, where `-D` means nothing — which would make it
+  `--database.ssl-mode=disable`, or the environment variable `DATABASE_SSLMODE`, for an image.
+  Try that before the next rehearsal relies on it.
 - **A local run talks to the production database.** The `local` profile itself carries no
   connection properties; the IDEA run configuration (`home,local`) loads them from an env file
   outside the repo, and that file points at the managed production database. A local run
@@ -258,7 +274,8 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- `mvn verify` (JDK 21). `tidy-maven-plugin:check` runs in `verify`, so after editing the pom run
+- `mvn verify` (JDK 21; with a running Docker it also runs the tests on PostgreSQL, below).
+  `tidy-maven-plugin:check` runs in `verify`, so after editing the pom run
   `mvn tidy:pom`. The enforcer's `dependencyConvergence` is on. The `apiguardian-api` pin in
   `<dependencyManagement>` is gone since logbook 4.2.0 (with Boot 4.1.1, HAS-145), which
   declares the version JUnit 6 does; should the two disagree again, pin it — do not exclude it.
@@ -272,6 +289,38 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   Mockito on the **real generated mapper** (`@Spy ... = new XxxMapperImpl()`) wherever the
   mapper's handling of ids matters. Reactive assertions via `publisher.as(StepVerifier::create)`.
   The SonarCloud gate requires ≥ 80 % coverage on new code.
+- **The tests on a real PostgreSQL** (HAS-207) are the classes under
+  `src/test/java/cloud/cholewa/data/postgres`, all extending `OnPostgres`:
+  `SchemaMigrationOnPostgresTest`, `HouseholdRegistryOnPostgresTest`,
+  `EatonConfigurationOnPostgresTest`. What to know before touching them:
+  - **They start the whole application** (`@SpringBootTest`, nothing mocked) on a
+    `postgres:17-alpine` in Docker (Testcontainers, versions managed by Boot). The `test`
+    profile switches Flyway off; `OnPostgres` switches it on and points `database.*` and
+    `spring.flyway.*` at the container, so the schema is built by **the application's own
+    Flyway** from the real migrations, and the queries run through the pooled connection of
+    `cholewa-commons` (with `database.ssl-mode=disable`). Not a `@DataR2dbcTest` slice like
+    the history tests of `heating-service` and `water-service`: here the services, the
+    mappers and the error mapping are the subject, and the slice loads none of them.
+  - **Every address is set explicitly**, the JDBC URL of Flyway included — an environment
+    variable or an env file of the IDE must never be able to point these tests at the
+    production database. Keep it that way when adding a property.
+  - **One container, one context for all of them**: the container is started on first use and
+    never stopped (Ryuk removes it with the JVM). A `@Container` field would stop it after
+    each class while Spring keeps the cached context, whose pool then points at a dead port.
+    The tables are emptied before every test.
+  - **Rows are read back with plain SQL**, the arrays written out (`array_to_string`) — an
+    assertion through the entity would have the mapping under test on both sides.
+  - **Without a Docker they are skipped, not failed** (`@Testcontainers(disabledWithoutDocker
+    = true)`): `mvn verify` stays green and the skipped classes show in its count.
+    `DockerInCiTest` closes the hole that leaves: it runs only where `CI=true` (GitHub
+    Actions) and fails when there is no Docker. On a developer machine it is itself the one
+    skipped test of a normal build — `Skipped: 1` is the expected tail, `Skipped: 4` or more
+    means the Docker was not running.
+  - **What they are for**: a Spring Boot / Spring Data / driver bump, a new migration, a new
+    column (add it to the before/after comparisons), a renamed constraint. A migration that
+    changes existing rows gets a rehearsal in `SchemaMigrationOnPostgresTest`: migrate a
+    schema of its own to the version before, write the old rows, migrate on.
+  - They cost about 10 s of a build, most of it the start of the container and the context.
 
 ## CI/CD & deployment
 

@@ -38,7 +38,14 @@ schema is managed by **Flyway**, and the whole request path is non-blocking (Spr
 
 # Run locally
 
-- Build: `mvn verify` (JDK 21).
+- Build: `mvn verify` (JDK 21). With a running **Docker** the build also starts a PostgreSQL in
+  it (Testcontainers, `postgres:17-alpine`) and runs the migrations, the repositories and the
+  API against that throwaway database — the test classes under
+  `src/test/java/cloud/cholewa/data/postgres`. Without a Docker those classes are **skipped**,
+  not failed: the build stays green and reports them in its count of skipped tests, so a
+  change to a migration, an entity or a mapper is only checked on a machine that has one (CI
+  does, and fails if it ever does not). The tests never connect to anything but that
+  container.
 - Ports: local profile `6005` (management `8005`); in the deployed `home` profile the
   service listens on `6200` and Actuator on `8200` like every service in the cluster. The
   ingress routes only 6200, so Actuator is reachable inside the cluster only — that is where
@@ -175,7 +182,9 @@ does not know: the value fails while the body is read, and the answer is a `400`
 # Database
 
 - **Access:** reactive, via `r2dbc-postgresql` and Spring Data R2DBC repositories.
-- **Migrations:** Flyway (JDBC driver) from `src/main/resources/db/migration`.
+- **Migrations:** Flyway (JDBC driver) from `src/main/resources/db/migration`. The build
+  applies all of them to an empty PostgreSQL in Docker, and runs the ones that change existing
+  rows over rows an earlier version would have left (see Run locally).
 - **Schema:** table `eaton_devices` (`point`, `room`, `type`, `gateway` + audit timestamps).
   The original `device_configuration` table was superseded by it and dropped in `V6`.
 - **Constraints** (`V7`): `(point, gateway)` is unique — it is the natural key of an Eaton
