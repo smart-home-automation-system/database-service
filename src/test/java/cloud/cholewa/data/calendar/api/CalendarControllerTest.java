@@ -64,6 +64,9 @@ class CalendarControllerTest {
         "/calendar/days?from=30.04.2026&to=2026-05-02",
         "/calendar/days?from=2026-04-30&to=5/2/26",
         "/calendar/days?from=2026-02-30&to=2026-05-02",
+        "/calendar/days?from=2026-04-30Z&to=2026-05-02",
+        "/calendar/days?from=2026-04-30&to=2026-05-02%2B02:00",
+        "/calendar/days?from=2026-04-30T00:00:00&to=2026-05-02",
         "/calendar/days?from=2026-04-30",
         "/calendar/days"
     })
@@ -140,6 +143,23 @@ class CalendarControllerTest {
         verifyNoInteractions(calendarService);
     }
 
+    //NUL is the one PostgreSQL cannot store as text; a line break or a tab has no place in the
+    //reason of a day either
+    @ParameterizedTest
+    @ValueSource(strings = {"Trip\\u0000", "Trip\\nhome", "\\tTrip"})
+    void should_refuse_a_reason_with_a_control_character(final String reason) {
+        webTestClient.put()
+            .uri("/calendar/days-off/2026-05-04")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("{\"reason\": \"" + reason + "\"}")
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].details").isEqualTo("reason");
+
+        verifyNoInteractions(calendarService);
+    }
+
     @Test
     void should_accept_a_reason_of_exactly_the_length_the_model_holds() {
         final String reason = "x".repeat(100);
@@ -156,7 +176,7 @@ class CalendarControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"04.05.2026", "2026-13-01", "tomorrow"})
+    @ValueSource(strings = {"04.05.2026", "2026-13-01", "2026-02-30", "2026-05-04Z", "2026-05-04+02:00", "tomorrow"})
     void should_answer_bad_request_for_a_day_it_cannot_read(final String date) {
         webTestClient.put()
             .uri("/calendar/days-off/{date}", date)

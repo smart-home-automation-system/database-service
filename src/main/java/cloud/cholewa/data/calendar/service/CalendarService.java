@@ -50,12 +50,13 @@ public class CalendarService {
 
     //Idempotent: a day set twice is stored once, with the reason of the second call. A weekend
     //or a holiday may be set as well - it is a day off either way, and from then on reads with
-    //the reason of the household
+    //the reason of the household. The reason is stored without the spaces around it
     public Mono<CalendarDay> setDayOff(final LocalDate date, final String reason) {
+        final String stored = reason.strip();
         return Mono.fromRunnable(() -> checkWithinCalendar(date))
-            .then(Mono.defer(() -> repository.set(date, reason, LocalDateTime.now(ZoneId.systemDefault()))))
-            .then(Mono.fromSupplier(() -> dayOff(date, reason)))
-            .doOnNext(day -> log.info("Day off set: {} [{}]", date, reason));
+            .then(Mono.defer(() -> repository.set(date, stored, LocalDateTime.now(ZoneId.systemDefault()))))
+            .then(Mono.fromSupplier(() -> dayOff(date, stored)))
+            .doOnNext(day -> log.info("Day off set: {} [{}]", date, stored));
     }
 
     //Only what the household added can be taken back. A holiday or a weekend is not stored, so
@@ -106,12 +107,14 @@ public class CalendarService {
             throw new ServerWebInputException(
                 "The range has to start before it ends: from [" + from + "] to [" + to + "]");
         }
+        //before anything is added to a date: a year of nine digits is a date too, and two years
+        //more than the last of them is not
+        if (from.isBefore(START_OF_CALENDAR) || to.isAfter(END_OF_CALENDAR)) {
+            throw new ServerWebInputException(outsideTheCalendar("from [" + from + "] to [" + to + "]"));
+        }
         if (to.isAfter(from.plusYears(MAX_YEARS))) {
             throw new ServerWebInputException(
                 "The range is longer than " + MAX_YEARS + " years: from [" + from + "] to [" + to + "]");
-        }
-        if (from.isBefore(START_OF_CALENDAR) || to.isAfter(END_OF_CALENDAR)) {
-            throw new ServerWebInputException(outsideTheCalendar("from [" + from + "] to [" + to + "]"));
         }
     }
 

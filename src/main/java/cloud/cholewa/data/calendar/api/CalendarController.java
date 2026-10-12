@@ -20,23 +20,25 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.util.List;
 
-import static org.springframework.format.annotation.DateTimeFormat.ISO.DATE;
-
-//Every date is written as ISO (2026-05-01) and said so on the parameter: left to the default,
-//Spring reads a date in the short form of the locale of the JVM
+//Every date is written as 2026-05-01 and said so on the parameter: left to the default, Spring
+//reads a date in the short form of the locale of the JVM. By a pattern and not by ISO.DATE,
+//which also reads a date with an offset (2026-05-04+02:00) and drops the offset without a word.
+//Spring reads the pattern strictly: 30 February is no date
 @Slf4j
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("calendar")
 public class CalendarController {
 
+    private static final String DATE = "yyyy-MM-dd";
+
     private final CalendarService calendarService;
 
     //every day of the range, the start included and the end not
     @GetMapping("days")
     Mono<ResponseEntity<List<CalendarDay>>> getDays(
-        @RequestParam @DateTimeFormat(iso = DATE) final LocalDate from,
-        @RequestParam @DateTimeFormat(iso = DATE) final LocalDate to
+        @RequestParam @DateTimeFormat(pattern = DATE) final LocalDate from,
+        @RequestParam @DateTimeFormat(pattern = DATE) final LocalDate to
     ) {
         return calendarService.days(from, to)
             .doOnSubscribe(subscription -> log.info("Querying for the days of the calendar from: {} to: {}", from, to))
@@ -46,7 +48,7 @@ public class CalendarController {
     //PUT on the day itself: set twice it is stored once, with the reason of the second call
     @PutMapping("days-off/{date}")
     Mono<ResponseEntity<CalendarDay>> setDayOff(
-        @PathVariable @DateTimeFormat(iso = DATE) final LocalDate date,
+        @PathVariable @DateTimeFormat(pattern = DATE) final LocalDate date,
         @Valid @RequestBody final DayOffRequest request
     ) {
         return calendarService.setDayOff(date, request.reason())
@@ -54,7 +56,7 @@ public class CalendarController {
     }
 
     @DeleteMapping("days-off/{date}")
-    Mono<ResponseEntity<Void>> removeDayOff(@PathVariable @DateTimeFormat(iso = DATE) final LocalDate date) {
+    Mono<ResponseEntity<Void>> removeDayOff(@PathVariable @DateTimeFormat(pattern = DATE) final LocalDate date) {
         return calendarService.removeDayOff(date)
             .then(Mono.just(ResponseEntity.noContent().build()));
     }

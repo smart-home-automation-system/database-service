@@ -118,7 +118,10 @@ class CalendarServiceTest {
         "2026-05-02, 2026-05-01, has to start before it ends",
         "2026-01-01, 2028-01-02, longer than 2 years",
         "1999-12-31, 2000-01-02, covers the years 2000 to 2099",
-        "2099-12-31, 2100-01-02, covers the years 2000 to 2099"
+        "2099-12-31, 2100-01-02, covers the years 2000 to 2099",
+        //the last years a date can name: adding the two years of the limit to them would fail
+        "+999999998-01-01, +999999999-01-01, covers the years 2000 to 2099",
+        "-999999999-01-01, 2026-01-01, covers the years 2000 to 2099"
     })
     void should_refuse_a_range_it_cannot_serve(final LocalDate from, final LocalDate to, final String reason) {
         sut.days(from, to).as(StepVerifier::create)
@@ -142,6 +145,16 @@ class CalendarServiceTest {
             .verifyComplete();
 
         verify(repository).set(eq(date), eq("Long weekend"), any(LocalDateTime.class));
+    }
+
+    @Test
+    void should_store_the_reason_without_the_spaces_around_it() {
+        final LocalDate date = LocalDate.of(2026, 5, 4);
+        when(repository.set(eq(date), eq("Long weekend"), any(LocalDateTime.class))).thenReturn(Mono.empty());
+
+        sut.setDayOff(date, "  Long weekend ").as(StepVerifier::create)
+            .expectNext(dayOff(2026, 5, 4, "Long weekend"))
+            .verifyComplete();
     }
 
     //a day the calendar never answers for would be stored and never read
