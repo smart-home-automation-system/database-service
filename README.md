@@ -88,14 +88,17 @@ The registry of the devices of the house (`SmartDevice` of `smart-home-sdk` >= 1
 device is, where it is and how it is reached. The device services (weather, blinds, light,
 heating) read it; so will the dashboard. **It is the one table of devices**: the Eaton
 configuration above is the same rows, seen through the API `amx-service` asks - a device
-registered there shows up here, and the other way round. **Read-only so far** - the writes are
-the next step, and until the gateway routes `/home/device/registry/**` it is reachable inside
-the cluster only.
+registered there shows up here, and the other way round. Until the gateway routes
+`/home/device/registry/**` it is reachable inside the cluster only.
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/home/device/registry?kind=<kind>&room=<room>&enabled=<true\|false>` | The devices, sorted by room and then by name (ignoring case). Every filter is optional and they combine; `kind` and `room` take the values of the SDK (`opening sensor`, `living room`), in any case; a filter left empty (`kind=`) is a filter not given. `200 OK`, `[]` when nothing matches. `400` for a kind or a room the SDK does not know, or an `enabled` that is not a boolean. |
 | `GET` | `/home/device/registry/{id}` | One device by the id the registry gave it. `200 OK`; `404` with the code `NOT_FOUND_DEVICE` for an id nothing is registered under; `400` for an id that is not a number. |
+| `POST` | `/home/device/registry` | Registers a device; the body is a `SmartDevice`. `201 Created` with the device and the `id` it got - an `id` in the body is ignored. `400` for a body the model refuses (a required field, a bound - no code), `400` with the code `INVALID_DEVICE` for a device the registry refuses (below), `409` with the code `DEVICE_CONFLICT` when its binding is taken. |
+| `PUT` | `/home/device/registry/{id}` | Replaces the device by the body, **whole**: what the body leaves out is gone, and `enabled` is taken from it like everything else. The `id`, the `kind` and the time of registration stay - a body of another kind is a `400` `INVALID_DEVICE`. `200 OK` with the device; `404` `NOT_FOUND_DEVICE`; the refusals of `POST`. |
+| `POST` | `/home/device/registry/{id}/enable`, `.../{id}/disable` | Switches one device on or off for the services and leaves the rest of it. `200 OK` with the device; `404` `NOT_FOUND_DEVICE`. |
+| `DELETE` | `/home/device/registry/{id}` | Removes the device for good. `204 No Content`; `404` `NOT_FOUND_DEVICE`. |
 
 ```json
 [
@@ -124,6 +127,41 @@ What a reader can rely on:
   kind and its point (`Living room temperature sensor 45`) - because a configuration has none.
 - A device is addressed by `id` here, unlike a member of the household (by name): it has no
   natural key across the three bindings.
+
+What a writer has to know:
+
+- **The registry ties a device together where the model does not** - a device that breaks one
+  of these is a `400` with the code `INVALID_DEVICE`, and `details` says which:
+  - exactly one binding;
+  - the vendor `eaton` and the `eaton` binding go together and only together; a `shelly`
+    binding is of the vendor `shelly`; a `bthome` binding is of `shelly` or `other`;
+  - the kind says which bindings it is reached through:
+
+    | kind | bindings |
+    |---|---|
+    | `blinds`, `light` | `shelly`, `eaton` |
+    | `opening sensor`, `motion sensor`, `presence sensor`, `temperature sensor` | `shelly`, `eaton`, `bthome` |
+    | `weather station` | `bthome` |
+    | `bthome gateway` | `shelly` |
+
+  - `lightKind` only on a `light`; `placement` and `positioning` only on `blinds`. None of the
+    three is required.
+- **A binding is one device** - `409` with the code `DEVICE_CONFLICT`, and `details` names
+  what is taken: a channel of a Shelly by its address, a channel of a Shelly by its MQTT id,
+  a point of an Eaton gateway, a Bluetooth address. A Shelly without a channel is one device
+  as a whole, next to which its channels may still be registered.
+- **`PUT` is the whole device, not a patch.** Send everything the device should be; a client
+  that edits a device reads it, changes it and sends it back. There is no partial update: the
+  model has five required fields, and nothing in it tells "left out" from "cleared".
+- **The kind cannot be changed**: the services keep what they know of a device under its id.
+  A device of another kind is removed and registered again. The room, the name, the binding
+  and with it the vendor may all change under one id.
+- **The registry is the Eaton configuration**: moving an Eaton device to another room changes
+  the room `amx-service` reads for the next datagram of its point; removing it leaves the
+  point unconfigured (`404` to the lookup), and for a room sensor that is the end of that
+  room's temperature readings. A point registered through either API is taken for the other.
+- **Calls for one device go one after the other** - every write stores the whole row, as for
+  the members of the household.
 
 ## Household registry
 
@@ -214,6 +252,8 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
+| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a field of another kind, a change of the kind |
+| `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry |
 
 The codes are API: a caller may branch on them, so they do not change without their callers.
 `message` and `details` are for people and may be reworded. Every other error — a rejected
@@ -233,9 +273,8 @@ does not know: the value fails while the body is read, and the answer is a `400`
   rows over rows an earlier version would have left (see Run locally).
 - **Schema:** one table of devices, `devices` (`V13`, below). The Eaton configuration lived in
   `eaton_devices` until then (and in `device_configuration` before `V6`); `V13` copied its
-  rows into `devices`, and the service neither reads nor writes `eaton_devices` any more. The
-  table is still there, for the version before this one during a rollout - the next migration
-  drops it.
+  rows into `devices`, and `V14` dropped `eaton_devices` - after copying what a version before
+  `V13` could still have stored there in the meantime.
 - **Constraints of an Eaton point** (`V7` on the old table, `V13` on `devices`): `(gateway,
   point)` is unique — it is the natural key of an Eaton
   device. Every gateway numbers its own devices, so the same `point` on a *different*
