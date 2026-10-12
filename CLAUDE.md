@@ -15,7 +15,7 @@ specific to this repo. When opened as part of the workspace, those rules apply h
 
 ## What it stores
 
-Two independent domains, one package each under `cloud.cholewa.data`, both following the same
+Three independent domains, one package each under `cloud.cholewa.data`, all following the same
 layering `api` → `service` → `repository`, with MapStruct mappers between the entities and the
 `smart-home-sdk` models:
 
@@ -28,6 +28,11 @@ layering `api` → `service` → `repository`, with MapStruct mappers between th
   and their Wi-Fi devices (`member_devices`, MAC addresses). Source of truth about who lives
   here; `presence-service` reads it to match UniFi clients to members and keeps only presence
   state and history itself. The API is in the README.
+
+- **`device.registry`** — the device registry (HAS-222, epic HAS-218): every device of the house
+  with its room, its kind and the way it is reached. Table `devices`. Read by the device
+  services at their start and every few minutes; reads only so far. Not routed by the gateway
+  yet (HAS-225).
 
 Routing: inside the cluster callers use k8s DNS (`http://database-service:6200`).
 `api-gateway-service` routes `/device/configuration/**` and `/household/**` here (one `database`
@@ -132,6 +137,10 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     (What the database does with such a `null` today, seen there with a mapper broken on
     purpose: `rooms` and `permissions` are `NOT NULL`, so the update is refused and the
     operation fails — the grant is not lost silently. A nullable column would be.)
+  **Never call a blocking helper of `OnPostgres` (`row`, `rows`) inside `assertNext` of a
+  `StepVerifier`**: it runs on a reactive thread and fails the expectation with a message
+  that shows the value and not the cause (HAS-222). Take the result with `block(PATIENCE)`
+  first, as `DeviceRegistryOnPostgresTest` does.
   - **A new value of `MemberPermission` must reach every reader before it is stored.**
     `presence-service` reads the whole registry in one call and fails on a value its SDK does
     not know. Today it is on an SDK without the field and ignores it; from the day it has the
@@ -160,6 +169,73 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   `Comparable`: sort with an explicit comparator (the no-arg `collectSortedList()` threw
   `ClassCastException` with two members).
 - Deleting a member cascades to its devices in the database (`ON DELETE CASCADE`), not in code.
+
+## Device registry - the parts worth knowing before changing anything
+
+`device.registry` (HAS-222, `V13`, table `devices`): the devices of the house as `SmartDevice` of
+`smart-home-sdk` >= 1.7.0. **Reads only so far**; the writes are HAS-223.
+
+- **A row is flat, the model is nested.** The three bindings (`shelly`, `eaton`, `bthome`) are
+  columns of the one row; exactly one of them is filled. Each is told by the column it cannot
+  do without - `shelly_address`, `eaton_gateway`, `bthome_address` - in the check of the schema
+  (`devices_one_binding`) and in the mapper alike. Change one, change the other.
+- **`SmartDeviceMapper` is written by hand, on purpose** - the one mapper here that is not
+  MapStruct. MapStruct fills a nested target whenever its source object is there, so every
+  device would come out with all three bindings, two of them objects of nulls; the model is
+  written with `NON_EMPTY`, which drops a `null` and keeps an empty object, and a reader tells
+  the binding by its presence. And the model has no setter for the id, only the builder.
+  `SmartDeviceMapperTest` compares whole models, so a column added to the entity and forgotten
+  in the mapper fails there once the test names it.
+- **The query is built, not derived** (`DeviceRepository`, `R2dbcEntityTemplate` + `Criteria`):
+  three optional filters. A hand-written `(:kind IS NULL OR kind = :kind)` leaves PostgreSQL
+  unable to type a parameter that is null. An enum in a criterion reaches the database as the
+  name of its constant - `DeviceRegistryOnPostgresTest` runs every filter on a real PostgreSQL.
+- **The order is the service's**, in Java: the room and the name as a client reads them (the
+  SDK value, so `bathroom up` before `office`), the name ignoring case, the id last.
+  `SmartDevice` is not `Comparable` - an explicit comparator, as for the members.
+- **A filter is the SDK value, read by the service** (`opening sensor`, `living room`): Spring
+  would convert an enum parameter by the name of its constant. One the SDK does not know is a
+  `ServerWebInputException` - 400 without a code, the way an unknown room in a body is answered.
+  The case does not matter (the enums of the SDK read their values ignoring it) and an empty
+  filter is no filter, like an empty `enabled`.
+- **Unique per binding, by a name each** - `devices_shelly_address_channel_uq`,
+  `devices_shelly_device_id_channel_uq`, `devices_eaton_gateway_point_uq`,
+  `devices_bthome_gateway_address_uq`; the writes will map a duplicate by these names (the
+  rule of the household: renaming one in a migration breaks the mapping). **The two of a
+  Shelly are indexes on an expression**, `(..., COALESCE(shelly_channel, -1))`: the task asked
+  for a plain `UNIQUE (address, channel)`, under which a Shelly without a channel could be
+  registered any number of times - two NULLs are never equal. A device may still be
+  registered once without a channel (a gateway) and once per channel. **The second one, on
+  the MQTT id, came from the review**: the services find the device of an event by that id,
+  and a Shelly registered again under a new address would be two devices for one event. A
+  Gen1 device has no id and is not counted by it.
+- **The schema says what it can of "the binding fits the vendor and the kind"** - what needs
+  one row only: the vendor `EATON` and the Eaton binding go together and only together
+  (`devices_eaton_vendor_binding`), `light_kind` is of a light, `placement` and `positioning`
+  are of blinds. The rest is for the writes (HAS-223): which kinds a Shelly or a Bluetooth
+  binding may carry, and that the gateway of a sensor is itself registered. PostgreSQL names
+  the first check that fails in the alphabetical order of the constraints - a test of one
+  check needs a row that breaks no other.
+- **A sensor is unique per gateway, not across the registry** (as the task says): the same
+  Bluetooth address under a second gateway is accepted. Open, from the review - whether one
+  physical sensor may ever be two devices is the owner's to say before the writes exist.
+- **No `@NotNull` on the entity**: nothing validates an entity here, the schema says what may
+  not be null. (`EatonDeviceConfigurationEntity` and the household entities carry such
+  annotations from before; they do nothing.)
+- **`id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`** - without the `NOT NULL UNIQUE` the
+  older tables add, which only buys a second index on the id.
+- **The schema repeats the bounds of the SDK models** (generation 1..4, channel 0..3, point
+  1..99, the formats): change them in the SDK and in a new migration together. The point range
+  is now stated in a fifth place (see the Eaton section).
+- **The id is exposed** - against "no surrogate id" of the household. A device has no natural
+  key across three bindings, and the SDK model carries the id. The model also *reads* an id a
+  client sends (`readOnly` only took the setter away): the writes must ignore it.
+- **An Eaton point is named in two tables now**: `eaton_devices`, which `amx-service` asks for
+  every datagram, and `devices`. Nothing ties them, and no code reads both. Before a service
+  takes the room of a point from the registry, decide which table is the source - until then
+  a point moved in one and not the other is two answers.
+- **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
+  in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
 ## Eaton configuration — query parameters are validated too
 
@@ -260,7 +336,10 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `java … -jar application.jar`, so what follows the image name lands after `-jar`, as a
   program argument, where `-D` means nothing — which would make it
   `--database.ssl-mode=disable`, or the environment variable `DATABASE_SSLMODE`, for an image.
-  Try that before the next rehearsal relies on it.
+  **Tried in the rehearsal of `V13` (HAS-222): `--database.ssl-mode=disable` after the image
+  name works** - the released image ran against a `postgres:17-alpine` without SSL, with the
+  five `database-*` values as `-e` variables. So a rehearsal no longer needs a PostgreSQL
+  that speaks SSL.
 - **A local run talks to the production database.** The `local` profile itself carries no
   connection properties; the IDEA run configuration (`home,local`) loads them from an env file
   outside the repo, and that file points at the managed production database. A local run
@@ -292,7 +371,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 - **The tests on a real PostgreSQL** (HAS-207) are the classes under
   `src/test/java/cloud/cholewa/data/postgres`, all extending `OnPostgres`:
   `SchemaMigrationOnPostgresTest`, `HouseholdRegistryOnPostgresTest`,
-  `EatonConfigurationOnPostgresTest`. What to know before touching them:
+  `EatonConfigurationOnPostgresTest`, `DeviceRegistryOnPostgresTest`. What to know before touching them:
   - **They start the whole application** (`@SpringBootTest`, nothing mocked) on a
     `postgres:17-alpine` in Docker (Testcontainers, versions managed by Boot). The `test`
     profile switches Flyway off; `OnPostgres` switches it on and points `database.*` and
