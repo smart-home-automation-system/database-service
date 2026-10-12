@@ -2,7 +2,9 @@ package cloud.cholewa.data.device.registry.api;
 
 import cloud.cholewa.data.config.ExceptionHandlerConfig;
 import cloud.cholewa.data.device.registry.service.DeviceRegistryService;
+import cloud.cholewa.data.error.DeviceConflictException;
 import cloud.cholewa.data.error.DeviceNotFoundException;
+import cloud.cholewa.data.error.InvalidDeviceException;
 import cloud.cholewa.home.model.BlindsPlacement;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -25,6 +28,7 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -181,5 +185,167 @@ class DeviceRegistryControllerTest {
             .expectStatus().isBadRequest();
 
         verifyNoInteractions(deviceRegistryService);
+    }
+
+    //--- the writes
+
+    //the model a body is read into: no id
+    private static final SmartDevice LIGHT_AS_SENT = SmartDevice.builder()
+        .name("Kitchen ceiling")
+        .room(RoomName.KITCHEN)
+        .kind(DeviceKind.LIGHT)
+        .enabled(false)
+        .vendor(SmartVendor.EATON)
+        .eaton(EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(44).build())
+        .lightKind(LightKind.DIMMER)
+        .build();
+
+    private static final String LIGHT_JSON = """
+        {"name": "Kitchen ceiling", "room": "kitchen", "kind": "light", "enabled": false, "vendor": "eaton",
+         "eaton": {"gateway": "lights", "point": 44}, "lightKind": "dimmer"}""";
+
+    @Test
+    void should_register_a_device_and_answer_created_with_what_the_registry_stored() {
+        when(deviceRegistryService.add(any())).thenReturn(Mono.just(LIGHT));
+
+        webTestClient.post()
+            .uri("/device/registry")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(LIGHT_JSON)
+            .exchange()
+            .expectStatus().isCreated()
+            .expectBody()
+            .jsonPath("$.id").isEqualTo(18)
+            .jsonPath("$.eaton.point").isEqualTo(44);
+
+        //the body is read by the values of the SDK, binding included
+        verify(deviceRegistryService).add(LIGHT_AS_SENT);
+    }
+
+    //what the model refuses never reaches the service: a required field, a bound, a binding
+    //that is there and not whole
+    @Test
+    void should_answer_bad_request_for_a_body_the_model_refuses() {
+        for (final String body : List.of(
+            LIGHT_JSON.replace("\"enabled\": false, ", ""),
+            LIGHT_JSON.replace("Kitchen ceiling", "K"),
+            LIGHT_JSON.replace("\"gateway\": \"lights\", ", ""),
+            LIGHT_JSON.replace("\"point\": 44", "\"point\": 0"),
+            LIGHT_JSON.replace("\"kind\": \"light\"", "\"kind\": \"LIGHT_BULB\""),
+            "{}"
+        )) {
+            webTestClient.post()
+                .uri("/device/registry")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .exchange()
+                .expectStatus().isBadRequest();
+            webTestClient.put()
+                .uri("/device/registry/18")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .exchange()
+                .expectStatus().isBadRequest();
+        }
+
+        verifyNoInteractions(deviceRegistryService);
+    }
+
+    @Test
+    void should_answer_the_codes_of_a_refused_device_and_of_a_taken_binding() {
+        when(deviceRegistryService.add(any()))
+            .thenReturn(Mono.error(new InvalidDeviceException("lightKind describes a light")))
+            .thenReturn(Mono.error(new DeviceConflictException("A device is already registered for the point [44]")));
+
+        webTestClient.post()
+            .uri("/device/registry")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(LIGHT_JSON)
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.errors[0].code").isEqualTo("INVALID_DEVICE")
+            .jsonPath("$.errors[0].message").isEqualTo("Invalid device")
+            .jsonPath("$.errors[0].details").isEqualTo("lightKind describes a light");
+
+        webTestClient.post()
+            .uri("/device/registry")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(LIGHT_JSON)
+            .exchange()
+            .expectStatus().isEqualTo(409)
+            .expectBody()
+            .jsonPath("$.errors[0].code").isEqualTo("DEVICE_CONFLICT")
+            .jsonPath("$.errors[0].message").isEqualTo("Device conflict")
+            .jsonPath("$.errors[0].details").isEqualTo("A device is already registered for the point [44]");
+    }
+
+    @Test
+    void should_replace_a_device_by_the_id_of_the_path() {
+        when(deviceRegistryService.replace(eq(18L), any())).thenReturn(Mono.just(LIGHT));
+
+        webTestClient.put()
+            .uri("/device/registry/18")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(LIGHT_JSON)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.id").isEqualTo(18);
+
+        verify(deviceRegistryService).replace(18L, LIGHT_AS_SENT);
+    }
+
+    @Test
+    void should_switch_a_device_on_and_off_and_answer_the_device() {
+        when(deviceRegistryService.enable(17L)).thenReturn(Mono.just(BLINDS));
+        when(deviceRegistryService.disable(18L)).thenReturn(Mono.just(LIGHT));
+
+        webTestClient.post()
+            .uri("/device/registry/17/enable")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.id").isEqualTo(17)
+            .jsonPath("$.enabled").isEqualTo(true);
+
+        webTestClient.post()
+            .uri("/device/registry/18/disable")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.id").isEqualTo(18)
+            .jsonPath("$.enabled").isEqualTo(false);
+    }
+
+    @Test
+    void should_remove_a_device_and_answer_no_content() {
+        when(deviceRegistryService.remove(18L)).thenReturn(Mono.empty());
+
+        webTestClient.delete()
+            .uri("/device/registry/18")
+            .exchange()
+            .expectStatus().isNoContent()
+            .expectBody().isEmpty();
+    }
+
+    @Test
+    void should_answer_not_found_with_its_code_to_a_write_on_a_device_that_is_not_registered() {
+        when(deviceRegistryService.replace(eq(99L), any())).thenReturn(Mono.error(DeviceNotFoundException.forId(99L)));
+        when(deviceRegistryService.enable(99L)).thenReturn(Mono.error(DeviceNotFoundException.forId(99L)));
+        when(deviceRegistryService.disable(99L)).thenReturn(Mono.error(DeviceNotFoundException.forId(99L)));
+        when(deviceRegistryService.remove(99L)).thenReturn(Mono.error(DeviceNotFoundException.forId(99L)));
+
+        for (final WebTestClient.RequestHeadersSpec<?> request : List.of(
+            webTestClient.put().uri("/device/registry/99").contentType(MediaType.APPLICATION_JSON).bodyValue(LIGHT_JSON),
+            webTestClient.post().uri("/device/registry/99/enable"),
+            webTestClient.post().uri("/device/registry/99/disable"),
+            webTestClient.delete().uri("/device/registry/99")
+        )) {
+            request.exchange()
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.errors[0].code").isEqualTo("NOT_FOUND_DEVICE");
+        }
     }
 }

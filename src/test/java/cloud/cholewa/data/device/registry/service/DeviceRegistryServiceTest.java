@@ -1,20 +1,27 @@
 package cloud.cholewa.data.device.registry.service;
 
+import cloud.cholewa.data.device.registry.mapper.DeviceEntityMapper;
 import cloud.cholewa.data.device.registry.mapper.SmartDeviceMapper;
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
 import cloud.cholewa.data.device.registry.repository.DeviceRepository;
+import cloud.cholewa.data.error.DeviceConflictException;
 import cloud.cholewa.data.error.DeviceNotFoundException;
+import cloud.cholewa.data.error.InvalidDeviceException;
 import cloud.cholewa.home.model.DeviceKind;
+import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
+import cloud.cholewa.home.model.LightKind;
 import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.SmartDevice;
 import cloud.cholewa.home.model.SmartVendor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.server.ServerWebInputException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -25,6 +32,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +45,9 @@ class DeviceRegistryServiceTest {
 
     @Spy
     private SmartDeviceMapper mapper = new SmartDeviceMapper();
+
+    @Spy
+    private DeviceEntityMapper entityMapper = new DeviceEntityMapper();
 
     @InjectMocks
     private DeviceRegistryService sut;
@@ -149,6 +161,142 @@ class DeviceRegistryServiceTest {
             .verifyErrorSatisfies(error -> assertThat(error)
                 .isInstanceOf(DeviceNotFoundException.class)
                 .hasMessage("Device not found for id: 7"));
+    }
+
+    //--- the writes
+
+    @Test
+    void should_register_a_device_and_answer_it_with_the_id_the_registry_gave_it() {
+        when(repository.insert(any())).thenAnswer(stored ->
+            Mono.just(stored.<DeviceEntity>getArgument(0).toBuilder().id(31L).build()));
+
+        sut.add(light(999L, "Kitchen ceiling", 44)).as(StepVerifier::create)
+            .assertNext(device -> {
+                assertThat(device.getId()).isEqualTo(31L);
+                assertThat(device.getName()).isEqualTo("Kitchen ceiling");
+                assertThat(device.getEaton().getPoint()).isEqualTo(44);
+            })
+            .verifyComplete();
+
+        //the id of the payload never reaches the row
+        final ArgumentCaptor<DeviceEntity> row = ArgumentCaptor.forClass(DeviceEntity.class);
+        verify(repository).insert(row.capture());
+        assertThat(row.getValue().getId()).isNull();
+    }
+
+    //a device the rules refuse runs no query
+    @Test
+    void should_refuse_a_device_the_rules_refuse_before_anything_is_asked_of_the_database() {
+        final SmartDevice device = lightBuilder(null, "Kitchen ceiling", 44).vendor(SmartVendor.SHELLY).build();
+
+        sut.add(device).as(StepVerifier::create).verifyError(InvalidDeviceException.class);
+        sut.replace(7L, device).as(StepVerifier::create).verifyError(InvalidDeviceException.class);
+
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void should_report_a_taken_binding_as_a_conflict_by_the_index_that_refused_it() {
+        when(repository.insert(any())).thenReturn(Mono.error(new DuplicateKeyException(
+            "duplicate key value violates unique constraint \"devices_eaton_gateway_point_uq\"")));
+
+        sut.add(light(null, "Kitchen ceiling", 44)).as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error)
+                .isInstanceOf(DeviceConflictException.class)
+                .hasMessage("A device is already registered for the point [44] of the Eaton gateway [lights]"));
+    }
+
+    //an index this service does not know is not worded as a taken binding: the library answers it
+    @Test
+    void should_leave_a_duplicate_it_cannot_name_as_it_is() {
+        when(repository.insert(any())).thenReturn(Mono.error(new DuplicateKeyException(
+            "duplicate key value violates unique constraint \"devices_something_new_uq\"")));
+
+        sut.add(light(null, "Kitchen ceiling", 44)).as(StepVerifier::create)
+            .verifyError(DuplicateKeyException.class);
+    }
+
+    @Test
+    void should_replace_a_device_under_its_id_whatever_id_the_payload_carries() {
+        when(repository.findById(7L)).thenReturn(Mono.just(device(7L, "Lamp", RoomName.OFFICE)));
+        when(repository.update(any())).thenAnswer(stored -> Mono.just(stored.getArgument(0)));
+
+        sut.replace(7L, light(999L, "Desk lamp", 8)).as(StepVerifier::create)
+            .assertNext(device -> {
+                assertThat(device.getId()).isEqualTo(7L);
+                assertThat(device.getName()).isEqualTo("Desk lamp");
+                assertThat(device.getEaton().getPoint()).isEqualTo(8);
+            })
+            .verifyComplete();
+    }
+
+    //the services keep what they know of a device under its id: blinds stay blinds
+    @Test
+    void should_refuse_to_make_a_device_one_of_another_kind() {
+        when(repository.findById(7L)).thenReturn(Mono.just(device(7L, "Lamp", RoomName.OFFICE)));
+        final SmartDevice blinds = lightBuilder(null, "Window", 7).kind(DeviceKind.BLINDS).lightKind(null).build();
+
+        sut.replace(7L, blinds).as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error)
+                .isInstanceOf(InvalidDeviceException.class)
+                .hasMessageStartingWith("The kind of a device cannot be changed: device 7 is of the kind [light]"));
+
+        verify(repository, never()).update(any());
+    }
+
+    @Test
+    void should_report_a_device_that_is_not_registered_to_every_write() {
+        when(repository.findById(7L)).thenReturn(Mono.empty());
+        when(repository.deleteById(7L)).thenReturn(Mono.just(0L));
+
+        sut.replace(7L, light(null, "Desk lamp", 8)).as(StepVerifier::create).verifyError(DeviceNotFoundException.class);
+        sut.enable(7L).as(StepVerifier::create).verifyError(DeviceNotFoundException.class);
+        sut.disable(7L).as(StepVerifier::create).verifyError(DeviceNotFoundException.class);
+        sut.remove(7L).as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error)
+                .isInstanceOf(DeviceNotFoundException.class)
+                .hasMessage("Device not found for id: 7"));
+
+        verify(repository, never()).update(any());
+    }
+
+    @Test
+    void should_switch_a_device_off_and_on() {
+        when(repository.findById(7L)).thenReturn(Mono.just(device(7L, "Lamp", RoomName.OFFICE)));
+        when(repository.update(any())).thenAnswer(stored -> Mono.just(stored.getArgument(0)));
+
+        sut.disable(7L).as(StepVerifier::create)
+            .assertNext(device -> {
+                assertThat(device.getEnabled()).isFalse();
+                assertThat(device.getName()).isEqualTo("Lamp");
+            })
+            .verifyComplete();
+        sut.enable(7L).as(StepVerifier::create)
+            .assertNext(device -> assertThat(device.getEnabled()).isTrue())
+            .verifyComplete();
+    }
+
+    @Test
+    void should_remove_a_device() {
+        when(repository.deleteById(7L)).thenReturn(Mono.just(1L));
+
+        sut.remove(7L).as(StepVerifier::create).verifyComplete();
+    }
+
+    private static SmartDevice light(final Long id, final String name, final int point) {
+        return lightBuilder(id, name, point).build();
+    }
+
+    private static SmartDevice.SmartDeviceBuilder<?, ?> lightBuilder(final Long id, final String name, final int point) {
+        return SmartDevice.builder()
+            .id(id)
+            .name(name)
+            .room(RoomName.KITCHEN)
+            .kind(DeviceKind.LIGHT)
+            .vendor(SmartVendor.EATON)
+            .enabled(true)
+            .eaton(EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(point).build())
+            .lightKind(LightKind.DIMMER);
     }
 
     private static DeviceEntity device(final long id, final String name, final RoomName room) {
