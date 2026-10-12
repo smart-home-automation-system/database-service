@@ -24,9 +24,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 //The device registry on a real PostgreSQL: the reads every device service starts from, and the
-//table they read (V13). The service of this task only reads, so the rows are written here with
-//plain SQL - which is also what shows that a row written by hand, or by the writes to come, is
-//read the way the model promises.
+//table they read (V13). The rows are written here with plain SQL, past the service - which is
+//what shows that a row written by hand is read the way the model promises, and what the table
+//itself lets in. The writes of the registry are in DeviceRegistryWritesOnPostgresTest.
 class DeviceRegistryOnPostgresTest extends OnPostgres {
 
     private static final String SHELLY_BLINDS = """
@@ -165,8 +165,8 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
             .expectStatus().isBadRequest();
     }
 
-    //--- the table: what V13 lets in. The writes of the registry (HAS-223) will meet these as
-    //--- errors of the database; here they are named once, by the constraint
+    //--- the table: what V13 lets in, named by the constraint. The writes of the registry check
+    //--- most of it first and answer in words; this is what stands behind them
 
     @Test
     void should_refuse_a_device_without_a_binding_and_one_with_two() {

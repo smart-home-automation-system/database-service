@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
 //filled, which the schema checks (V13). What may not be null is said there as well: nothing
 //validates an entity, so an annotation here would promise what no code keeps.
 @Value
-@Builder
+@Builder(toBuilder = true)
 @Table("devices")
 public class DeviceEntity {
 

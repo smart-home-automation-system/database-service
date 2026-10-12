@@ -54,10 +54,6 @@ class EatonConfigurationOnPostgresTest extends OnPostgres {
             .containsEntry("light_kind", null)
             .containsEntry("created", true)
             .satisfies(stored -> assertThat(((Number) stored.get("eaton_point")).intValue()).isEqualTo(7));
-
-        //and nothing is written to the table the configurations used to live in - which nothing
-        //here empties any more either
-        assertThat(row("SELECT count(*) AS configurations FROM eaton_devices")).containsEntry("configurations", 0L);
     }
 
     //the two types of a light are one kind of the registry, told apart by how the light is driven

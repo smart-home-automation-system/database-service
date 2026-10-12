@@ -55,6 +55,16 @@ public class DeviceRepository {
         return template.insert(device);
     }
 
+    //the whole row, by its id - every column is written, so the entity has to carry every one
+    public Mono<DeviceEntity> update(final DeviceEntity device) {
+        return template.update(device);
+    }
+
+    //the number of rows that went: none when no device has the id
+    public Mono<Long> deleteById(final long id) {
+        return template.delete(Query.query(Criteria.where("id").is(id)), DeviceEntity.class);
+    }
+
     private static Criteria eatonPoint(final EatonGatewayType gateway, final int point) {
         return Criteria.where("eatonGateway").is(gateway).and("eatonPoint").is(point);
     }

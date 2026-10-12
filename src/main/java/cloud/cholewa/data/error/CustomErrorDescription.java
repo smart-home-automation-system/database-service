@@ -20,7 +20,9 @@ public enum CustomErrorDescription implements ErrorId {
     INVALID_HOUSEHOLD_MEMBER("Invalid household member"),
     DEVICE_EXIST("Member device already exists"),
     NOT_FOUND_MEMBER_DEVICE("Member device not found"),
-    NOT_FOUND_DEVICE("Device not found");
+    NOT_FOUND_DEVICE("Device not found"),
+    INVALID_DEVICE("Invalid device"),
+    DEVICE_CONFLICT("Device conflict");
 
     @Getter
     private final String description;

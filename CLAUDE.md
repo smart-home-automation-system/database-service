@@ -33,8 +33,8 @@ layering `api` → `service` → `repository`, with MapStruct mappers between th
 
 - **`device.registry`** — the device registry (HAS-222, epic HAS-218): every device of the house
   with its room, its kind and the way it is reached. Table `devices`. Read by the device
-  services at their start and every few minutes; reads only so far. Not routed by the gateway
-  yet (HAS-225).
+  services at their start and every few minutes, written by the administration page to come
+  (HAS-231) and from Bruno. Not routed by the gateway yet (HAS-225).
 
 Routing: inside the cluster callers use k8s DNS (`http://database-service:6200`).
 `api-gateway-service` routes `/device/configuration/**` and `/household/**` here (one `database`
@@ -175,7 +175,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 ## Device registry - the parts worth knowing before changing anything
 
 `device.registry` (HAS-222, `V13`, table `devices`): the devices of the house as `SmartDevice` of
-`smart-home-sdk` >= 1.8.0. **Reads only so far**; the writes are HAS-223.
+`smart-home-sdk` >= 1.8.0 - the reads (HAS-222) and the writes (HAS-223, below).
 
 - **A row is flat, the model is nested.** The three bindings (`shelly`, `eaton`, `bthome`) are
   columns of the one row; exactly one of them is filled. Each is told by the column it cannot
@@ -202,7 +202,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   filter is no filter, like an empty `enabled`.
 - **Unique per binding, by a name each** - `devices_shelly_address_channel_uq`,
   `devices_shelly_device_id_channel_uq`, `devices_eaton_gateway_point_uq`,
-  `devices_bthome_address_uq`; the writes will map a duplicate by these names (the
+  `devices_bthome_address_uq`; the writes map a duplicate by these names (the
   rule of the household: renaming one in a migration breaks the mapping). **The two of a
   Shelly are indexes on an expression**, `(..., COALESCE(shelly_channel, -1))`: the task asked
   for a plain `UNIQUE (address, channel)`, under which a Shelly without a channel could be
@@ -214,7 +214,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **The schema says what it can of "the binding fits the vendor and the kind"** - what needs
   one row only: the vendor `EATON` and the Eaton binding go together and only together
   (`devices_eaton_vendor_binding`), `light_kind` is of a light, `placement` and `positioning`
-  are of blinds. The rest is for the writes (HAS-223): which kinds a Shelly or a Bluetooth
+  are of blinds. The rest is `DeviceRules`, in the service: which kinds a Shelly or a Bluetooth
   binding may carry. PostgreSQL names
   the first check that fails in the alphabetical order of the constraints - a test of one
   check needs a row that breaks no other.
@@ -227,7 +227,8 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   is now stated in a fifth place (see the Eaton section).
 - **The id is exposed** - against "no surrogate id" of the household. A device has no natural
   key across three bindings, and the SDK model carries the id. The model also *reads* an id a
-  client sends (`readOnly` only took the setter away): the writes must ignore it.
+  client sends (`readOnly` only took the setter away): the writes ignore it - `POST` stores
+  without one, `PUT` takes the id of the path.
 - **One table of devices** (owner, 2026-10-12: "no two tables for the same thing"). The first
   version of this task left the Eaton configuration in `eaton_devices` next to `devices`, an
   Eaton point named in both with nothing tying them. `V13` now copies the configurations in
@@ -248,22 +249,22 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     task that makes `amx-service` publish `DeviceEvent` comes first.
   - **A device registered by the registry is a configuration to the Eaton API**: `POST` for
     its point answers 409, and that API has no update or delete - a wrong room is corrected
-    through the registry (HAS-223), not here.
+    through the registry (`PUT`), not here.
   - **A configuration has no name, the registry needs one**: `<Room> <kind> <point>`
     (`Living room temperature sensor 45`), worded the same in the migration (SQL) and in the
     mapper (Java). `EatonConfigurationMapperTest` and the rehearsal in
     `SchemaMigrationOnPostgresTest` pin the same strings - change both.
   - **The lookup ignores `enabled`**: `amx-service` has to read the datagram of a device
     whatever the services do with it.
-  - **`eaton_devices` is still there and unread.** The version before `V13` reads it while the
-    two run side by side in a rollout; dropped with it, every lookup of `amx-service` through
-    the old pod would fail for the length of the rollout. **The next migration drops it** -
-    do not forget it in HAS-223. Until then a configuration added through the new version is
-    not in it (seen in the rehearsal: the old pod answers 404 for it), which matters only for
-    the seconds two versions run together. **The other direction is a loss**: the copy runs
-    once, so a configuration the old version stores after `V13` - during the rollout, or
-    after a rollback - is in `eaton_devices` only. The migration that drops the table first
-    copies what `devices` lacks (`WHERE NOT EXISTS` by gateway and point).
+  - **`eaton_devices` is gone since `V14`** (HAS-223). `V13` left it in place because the
+    version before it read the table while the two ran side by side in the rollout; the
+    version after it (0.12.0) does not, so dropping it one release later cost nothing.
+    `V14` first copies what `devices` lacks (`WHERE NOT EXISTS` by gateway and point, the
+    mapping and the names of `V13` a fourth time): a configuration the old version stored
+    after `V13` - during that rollout, or after a rollback - was in `eaton_devices` only. A
+    row of the type `OTHER` stops `V14` as it stops `V13`, and the table stays. **Worth
+    repeating for any table a migration replaces: copy in one release, drop in the next.**
+    A rollback below `V13` is no longer possible without restoring the table by hand.
   - The room sensors of the AMX system are the kind `temperature sensor`, added to the SDK for
     this (1.8.0). At the migration the house had 13 of them, all on the gateway `BLINDS`, and
     nothing else in the table.
@@ -271,8 +272,51 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   should be redundancy, not a second device). The row has `bthome_address` and no gateway
   column; the address is unique in the registry (`devices_bthome_address_uq`), so a sensor is
   one device of one kind. Which gateways may deliver it is not stored: every enabled device
-  of the kind `bthome gateway`. HAS-223 was written for a `gatewayDeviceId` on the sensor -
-  its "the gateway must be registered" check has nothing to check any more.
+  of the kind `bthome gateway`.
+- **The writes** (HAS-223): `POST`, `PUT /{id}`, `POST /{id}/enable|disable`, `DELETE /{id}`.
+  - **`PUT`, not `PATCH`** (owner, 2026-10-12, against the wording of the task). `SmartDevice`
+    has five required fields, so a part of it does not get past `@Valid`; a `PATCH` would
+    have needed a model of its own in the SDK, with "left out means unchanged" and no way to
+    clear a field. `PUT` replaces the device by the payload, whole. **`enabled` is taken from
+    it** - the model has no default for it, which is the whole reason the household needed
+    separate operations for `active`; `enable` / `disable` exist as the switch of a list.
+  - **The id, the kind and `created_at` survive a `PUT`; nothing else does.** A change of the
+    kind is refused (400): the services will keep what they know of a device under its id.
+    The binding and the vendor may change - an Eaton actor replaced by a Shelly keeps its id.
+  - **`DeviceRules` is what the model leaves open**: one binding; the vendor `eaton` only with
+    the Eaton binding and the other way round; a Shelly binding only for the vendor `shelly`
+    (a Bluetooth sensor is `shelly` or `other`); and per kind the bindings it is reached
+    through - `blinds` / `light`: shelly, eaton; the four sensors: any; `weather station`:
+    bthome; `bthome gateway`: shelly. The switch names every kind, so a kind added to the SDK
+    stops the compiler there. The matrix is the service's own reading of "the binding fits
+    the vendor and the kind" - the README states it; change both.
+  - **A Shelly of generation 2 or later needs its `deviceId`** (owner, 2026-10-12; the SDK
+    leaves it optional, for Gen1). Without it no MQTT event finds the device - it can be
+    driven and never heard, with no error anywhere - and the unique index on the id does not
+    count the row, so the same Shelly could be registered again under a new address. The
+    schema does not say it: a row written past the API may still lack the id.
+  - **Not asked for**: a `lightKind` on a light, a `placement` on blinds - "not known" is an
+    answer the model allows.
+  - **The rules answer before the schema does** - in words, by the values a client sends. The
+    one bound the model and the schema count differently is the name: `@Size` counts UTF-16
+    units, `char_length` characters, so the rules count code points. Anything that still
+    reaches a `CHECK` is the bare 400 "Data integrity violation" of `cholewa-commons`;
+    `DeviceRegistryWritesOnPostgresTest` asserts that a body the model refuses is not
+    answered that way.
+  - **A taken binding is found by the schema alone** (`DuplicateKeyException`, mapped by the
+    name of the index to 409 `DEVICE_CONFLICT`): no check before the write - the registry has
+    one writer. When both indexes of a Shelly would fire, PostgreSQL names the address one.
+  - **On `PUT` the rules run before the row is read**, so a refused device runs no query -
+    and a body of another kind may be told about its binding before it is told that the
+    kind cannot change. Both are `INVALID_DEVICE`.
+  - **Every write stores the whole row** (`R2dbcEntityTemplate.update`). `DeviceEntityMapper`
+    names every column for a new row and a replacement; `withEnabled` copies the row with
+    `toBuilder`. `DeviceEntityMapperTest` maps a device with everything filled and asserts
+    that no column comes out null - the test a new column has to pass.
+  - **A write here is a write to the Eaton configuration**: a `PUT` that moves an Eaton
+    device changes the room `amx-service` reads for its point, a `DELETE` leaves the point
+    unconfigured - for a room sensor, the end of that room's readings in `heating-service`.
+    Nothing warns; the administration page (HAS-231) should.
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
@@ -410,7 +454,8 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 - **The tests on a real PostgreSQL** (HAS-207) are the classes under
   `src/test/java/cloud/cholewa/data/postgres`, all extending `OnPostgres`:
   `SchemaMigrationOnPostgresTest`, `HouseholdRegistryOnPostgresTest`,
-  `EatonConfigurationOnPostgresTest`, `DeviceRegistryOnPostgresTest`. What to know before touching them:
+  `EatonConfigurationOnPostgresTest`, `DeviceRegistryOnPostgresTest`,
+  `DeviceRegistryWritesOnPostgresTest`. What to know before touching them:
   - **They start the whole application** (`@SpringBootTest`, nothing mocked) on a
     `postgres:17-alpine` in Docker (Testcontainers, versions managed by Boot). The `test`
     profile switches Flyway off; `OnPostgres` switches it on and points `database.*` and

@@ -25,7 +25,9 @@ class CustomErrorDescriptionTest {
                 "INVALID_HOUSEHOLD_MEMBER",
                 "DEVICE_EXIST",
                 "NOT_FOUND_MEMBER_DEVICE",
-                "NOT_FOUND_DEVICE"
+                "NOT_FOUND_DEVICE",
+                "INVALID_DEVICE",
+                "DEVICE_CONFLICT"
             );
     }
 }

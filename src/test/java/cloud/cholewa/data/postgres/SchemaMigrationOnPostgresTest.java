@@ -33,7 +33,7 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
         final List<Map<String, Object>> applied = rows(
             "SELECT version, success FROM flyway_schema_history WHERE version IS NOT NULL");
 
-        assertThat(migrations).isGreaterThanOrEqualTo(13);
+        assertThat(migrations).isGreaterThanOrEqualTo(14);
         assertThat(applied)
             .hasSize(migrations)
             .allSatisfy(migration -> assertThat(migration).containsEntry("success", true));
@@ -94,7 +94,8 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsEntry("mac", "aa:bb:cc:dd:ee:01");
     }
 
-    //V7 over a table that holds the same point of a gateway twice: the older row stays
+    //V7 over a table that holds the same point of a gateway twice: the older row stays. Up to V7
+    //and no further: the table is gone since V14
     @Test
     void should_keep_the_older_of_two_configurations_of_one_point_when_they_become_unique() {
         final String schema = "rehearsal_eaton";
@@ -106,7 +107,7 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
                 (now(), 7, 'KITCHEN', 'DIMMER', 'LIGHTS'),
                 (now(), 7, 'LOFT', 'BLINDS', 'BLINDS')""".formatted(schema));
 
-        migrate(schema, "latest");
+        migrate(schema, "7");
 
         assertThat(rows("SELECT room FROM %s.eaton_devices ORDER BY id".formatted(schema)))
             .extracting(configuration -> configuration.get("room"))
@@ -116,6 +117,7 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
     //V13 over the Eaton configuration as V12 left it: every configuration becomes a device of the
     //registry - bound to its point, named after its room, its kind and its point, a dimmer as a
     //light that dims - and the old table is left as it was for the version that still reads it
+    //(V14 drops it, so this one stops at V13)
     @Test
     void should_move_the_eaton_configuration_into_the_registry_of_devices() {
         final String schema = "rehearsal_devices";
@@ -130,7 +132,7 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
                 ('2024-01-08 10:00:00', NULL, 8, 'KITCHEN', 'LIGHT', 'LIGHTS'),
                 ('2024-01-09 10:00:00', NULL, 7, 'OFFICE', 'BLINDS', 'BLINDS')""".formatted(schema));
 
-        migrate(schema, "latest");
+        migrate(schema, "13");
 
         assertThat(rows("""
             SELECT name || ' | ' || room || ' | ' || kind || ' | ' || COALESCE(light_kind, '-') || ' | '
@@ -173,6 +175,93 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .isInstanceOf(FlywayException.class)
             .hasMessageContaining("V13__devices.sql")
             .hasMessageContaining("not-null constraint");
+    }
+
+    //V14 over the two tables as a rollout of V13 could leave them: the configurations V13 copied,
+    //one of them corrected in the registry since, a device the registry got on its own - and two
+    //configurations the version before V13 stored after the copy, which are in eaton_devices
+    //alone. Those two move in, nothing that is there is touched or doubled, and the table goes
+    @Test
+    void should_copy_what_the_registry_lacks_before_the_table_of_the_eaton_configuration_is_dropped() {
+        final String schema = "rehearsal_drop_eaton";
+        startOver(schema);
+        migrate(schema, "12");
+        execute("""
+            INSERT INTO %1$s.eaton_devices (created_at, point, room, type, gateway) VALUES
+                ('2024-01-05 10:00:00', 45, 'LIVING_ROOM', 'TEMPERATURE_SENSOR', 'BLINDS'),
+                ('2024-01-06 10:00:00', 46, 'BATHROOM_DOWN', 'TEMPERATURE_SENSOR', 'BLINDS')""".formatted(schema));
+        migrate(schema, "13");
+
+        execute("""
+            UPDATE %1$s.devices SET room = 'LOFT', name = 'Loft sensor' WHERE eaton_point = 46;
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation)
+            VALUES (now(), 'Desk lamp', 'OFFICE', 'LIGHT', 'SHELLY', TRUE, '192.0.2.17', 2);
+            INSERT INTO %1$s.eaton_devices (created_at, updated_at, point, room, type, gateway) VALUES
+                ('2026-10-12 21:59:30', '2026-10-12 22:00:00', 47, 'OFFICE', 'TEMPERATURE_SENSOR', 'BLINDS'),
+                ('2026-10-12 21:59:40', NULL, 45, 'HALL_DOWN', 'DIMMER', 'LIGHTS')""".formatted(schema));
+
+        migrate(schema, "latest");
+
+        assertThat(rows("""
+            SELECT name || ' | ' || room || ' | ' || kind || ' | ' || COALESCE(light_kind, '-') || ' | '
+                   || COALESCE(eaton_gateway || ' ' || eaton_point, shelly_address) || ' | ' || vendor || ' ' || enabled
+                   AS device
+            FROM %s.devices ORDER BY id""".formatted(schema)))
+            .extracting(device -> device.get("device"))
+            .containsExactly(
+                "Living room temperature sensor 45 | LIVING_ROOM | TEMPERATURE_SENSOR | - | BLINDS 45 | EATON true",
+                "Loft sensor | LOFT | TEMPERATURE_SENSOR | - | BLINDS 46 | EATON true",
+                "Desk lamp | OFFICE | LIGHT | - | 192.0.2.17 | SHELLY true",
+                "Office temperature sensor 47 | OFFICE | TEMPERATURE_SENSOR | - | BLINDS 47 | EATON true",
+                "Hall down light 45 | HALL_DOWN | LIGHT | DIMMER | LIGHTS 45 | EATON true"
+            );
+
+        assertThat(row("""
+            SELECT to_char(created_at, 'YYYY-MM-DD HH24:MI') AS created, to_char(updated_at, 'YYYY-MM-DD HH24:MI') AS updated
+            FROM %s.devices WHERE eaton_point = 47""".formatted(schema)))
+            .containsEntry("created", "2026-10-12 21:59")
+            .containsEntry("updated", "2026-10-12 22:00");
+
+        assertThat(row("SELECT to_regclass('%s.eaton_devices') IS NULL AS dropped".formatted(schema)))
+            .containsEntry("dropped", true);
+    }
+
+    //the database of the house at the deploy: everything was copied by V13, nothing was added to
+    //the old table since - V14 copies nothing and drops it
+    @Test
+    void should_drop_the_table_of_the_eaton_configuration_when_the_registry_has_all_of_it() {
+        final String schema = "rehearsal_drop_eaton_plain";
+        startOver(schema);
+        migrate(schema, "12");
+        execute("""
+            INSERT INTO %1$s.eaton_devices (created_at, point, room, type, gateway)
+            VALUES (now(), 45, 'GARDEN', 'TEMPERATURE_SENSOR', 'BLINDS')""".formatted(schema));
+
+        migrate(schema, "latest");
+
+        assertThat(row("SELECT count(*) AS devices FROM %s.devices".formatted(schema))).containsEntry("devices", 1L);
+        assertThat(row("SELECT to_regclass('%s.eaton_devices') IS NULL AS dropped".formatted(schema)))
+            .containsEntry("dropped", true);
+    }
+
+    //a configuration of the type OTHER stored after V13 stops V14 the way one stops V13 - and
+    //the table it is in stays, for whoever has to decide what it is
+    @Test
+    void should_not_drop_the_table_over_a_configuration_the_registry_has_no_kind_for() {
+        final String schema = "rehearsal_drop_eaton_other";
+        startOver(schema);
+        migrate(schema, "13");
+        execute("""
+            INSERT INTO %1$s.eaton_devices (created_at, point, room, type, gateway)
+            VALUES (now(), 9, 'GARAGE', 'OTHER', 'LIGHTS')""".formatted(schema));
+
+        assertThatThrownBy(() -> migrate(schema, "latest"))
+            .isInstanceOf(FlywayException.class)
+            .hasMessageContaining("V14__drop_eaton_devices.sql")
+            .hasMessageContaining("not-null constraint");
+
+        assertThat(row("SELECT count(*) AS configurations FROM %s.eaton_devices".formatted(schema)))
+            .containsEntry("configurations", 1L);
     }
 
     //the container outlives the test, and with it the schema of an earlier run in the same JVM
