@@ -140,6 +140,8 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             "lightKind describes a light, not a device of the kind [blinds]");
         invalid(EATON_LIGHT.replace("\"lightKind\": \"dimmer\"", "\"positioning\": false"),
             "placement and positioning describe blinds, not a device of the kind [light]");
+        invalid(SHELLY_BLINDS.replace("\"deviceId\": \"shellyplus2pm-a1b2c3d4e5f6\", ", ""),
+            "A Shelly of generation 2 needs its deviceId - the id it reports under over MQTT");
         invalid("""
                 {"name": "Nowhere", "room": "office", "kind": "light", "vendor": "shelly", "enabled": true}""",
             "A device is reached through exactly one binding - shelly, eaton or bthome - and this one has none");
@@ -261,7 +263,8 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
         //the channel of the Shelly the blinds hang on
         replaced(light, """
             {"name": "Kitchen ceiling", "room": "kitchen", "kind": "light", "vendor": "shelly", "enabled": false,
-             "shelly": {"address": "192.0.2.17", "generation": 2, "channel": 0}}""")
+             "shelly": {"address": "192.0.2.17", "generation": 2, "deviceId": "shellyplus2pm-000000000000",
+                        "channel": 0}}""")
             .expectStatus().isEqualTo(409)
             .expectBody()
             .jsonPath("$.errors[0].code").isEqualTo("DEVICE_CONFLICT")

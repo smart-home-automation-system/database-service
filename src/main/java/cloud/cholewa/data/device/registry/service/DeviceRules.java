@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 final class DeviceRules {
 
     private static final int MIN_NAME_CHARACTERS = 3;
+    private static final int FIRST_GENERATION_ON_MQTT = 2;
 
     static void check(final SmartDevice device) {
         final Binding binding = bindingOf(device);
@@ -42,6 +43,18 @@ final class DeviceRules {
             throw new InvalidDeviceException(
                 "A device of the kind [" + kind.getValue() + "] is not reached through the binding [" + binding
                     + "], only through: " + possible.stream().map(Binding::toString).collect(Collectors.joining(", ")));
+        }
+
+        //A Shelly from the second generation on reports over MQTT, and the services find the
+        //device of an event by the id it reports under. Without the id the device can be driven
+        //and never heard: its events are dropped as nobody's, with no error anywhere - and the
+        //unique index on the id does not count the row. A Gen1 device has no such id to give
+        if (binding == Binding.SHELLY
+            && device.getShelly().getGeneration() >= FIRST_GENERATION_ON_MQTT
+            && device.getShelly().getDeviceId() == null) {
+            throw new InvalidDeviceException(
+                "A Shelly of generation " + device.getShelly().getGeneration()
+                    + " needs its deviceId - the id it reports under over MQTT");
         }
 
         //The model counts the units of a string, the schema its characters (devices_name_length):

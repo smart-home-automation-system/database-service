@@ -23,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 //kind, and nothing of another kind.
 class DeviceRulesTest {
 
-    private static final ShellyBinding SHELLY = ShellyBinding.builder().address("192.0.2.17").generation(2).build();
+    private static final ShellyBinding SHELLY = ShellyBinding.builder()
+        .address("192.0.2.17").generation(2).deviceId("shellyplus1-a1b2c3d4e5f6").build();
     private static final EatonBinding EATON = EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(44).build();
     private static final BthomeBinding BTHOME = BthomeBinding.builder().address("7c:c6:b6:00:00:01").build();
 
@@ -136,6 +137,30 @@ class DeviceRulesTest {
         assertThatThrownBy(() -> DeviceRules.check(device))
             .isInstanceOf(InvalidDeviceException.class)
             .hasMessage("The name of a device has at least 3 characters");
+    }
+
+    //a Shelly that reports over MQTT is found by the id it reports under: without it the device
+    //could be driven and never heard
+    @ParameterizedTest
+    @CsvSource({"2", "3", "4"})
+    void should_refuse_a_shelly_that_reports_over_mqtt_without_the_id_it_reports_under(final int generation) {
+        final SmartDevice device = device(DeviceKind.LIGHT, SmartVendor.SHELLY, "")
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(generation).channel(0).build())
+            .build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A Shelly of generation " + generation + " needs its deviceId - the id it reports under over MQTT");
+    }
+
+    //a Gen1 device does not report over MQTT and has no such id to give
+    @Test
+    void should_take_a_shelly_of_the_first_generation_without_an_id() {
+        final SmartDevice device = device(DeviceKind.LIGHT, SmartVendor.SHELLY, "")
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(1).build())
+            .build();
+
+        assertThatCode(() -> DeviceRules.check(device)).doesNotThrowAnyException();
     }
 
     //none of the three is asked for: a light may come without the way it is driven, blinds
