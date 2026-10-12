@@ -32,7 +32,8 @@ Eaton devices** (which data point on which gateway corresponds to which device t
 which room) and the **household registry**: the household members and the Wi-Fi devices
 (MAC addresses) that represent them, which `presence-service` reads to tell who is at home,
 and each member's **role and rooms**, from which the web dashboard decides what that person
-sees. PostgreSQL is accessed reactively over **R2DBC** (Spring Data R2DBC), the
+sees - and the **device registry**: every device of the house with its room, its kind and
+the way it is reached, which the device services read. PostgreSQL is accessed reactively over **R2DBC** (Spring Data R2DBC), the
 schema is managed by **Flyway**, and the whole request path is non-blocking (Spring WebFlux
 / Reactor). Domain models come from the shared `smart-home-sdk`.
 
@@ -78,7 +79,51 @@ route of the gateway.
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/home/device/configuration/eaton` | Register an Eaton device configuration (`EatonDeviceConfiguration`: point, room, type, gateway — all four required, `point` in the range 1..99). Returns `201 Created`; an incomplete body or a `point` outside the range returns `400 Bad Request`; a configuration already registered for that point + gateway returns `409 Conflict`. |
+| | | *Since the registry (`V13`):* a configuration is stored as a device of the registry (below), so the `type` `other` - which has no kind there - is refused with `400`, and a point a device of the registry already holds is the same `409`. |
 | `GET` | `/home/device/configuration/eaton?point=<n>&gateway=<name>` | Look up the configuration for a data point on a gateway. `point` is a number in the range 1..99, `gateway` is `blinds` or `lights`, matched case-insensitively (`amx-service` sends `BLINDS`). Returns `200 OK` with `EatonConfigurationResponse`; `404 Not Found` when no configuration exists for the pair; `400 Bad Request` when `point` is outside the range or not a number, or `gateway` is not one of the known values. |
+
+## Device registry
+
+The registry of the devices of the house (`SmartDevice` of `smart-home-sdk` >= 1.8.0): what a
+device is, where it is and how it is reached. The device services (weather, blinds, light,
+heating) read it; so will the dashboard. **It is the one table of devices**: the Eaton
+configuration above is the same rows, seen through the API `amx-service` asks - a device
+registered there shows up here, and the other way round. **Read-only so far** - the writes are
+the next step, and until the gateway routes `/home/device/registry/**` it is reachable inside
+the cluster only.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/home/device/registry?kind=<kind>&room=<room>&enabled=<true\|false>` | The devices, sorted by room and then by name (ignoring case). Every filter is optional and they combine; `kind` and `room` take the values of the SDK (`opening sensor`, `living room`), in any case; a filter left empty (`kind=`) is a filter not given. `200 OK`, `[]` when nothing matches. `400` for a kind or a room the SDK does not know, or an `enabled` that is not a boolean. |
+| `GET` | `/home/device/registry/{id}` | One device by the id the registry gave it. `200 OK`; `404` with the code `NOT_FOUND_DEVICE` for an id nothing is registered under; `400` for an id that is not a number. |
+
+```json
+[
+  {"id": 2, "name": "Kitchen ceiling", "room": "kitchen", "kind": "light", "enabled": false,
+   "vendor": "eaton", "eaton": {"gateway": "lights", "point": 44}, "lightKind": "dimmer"},
+  {"id": 1, "name": "Office window", "room": "office", "kind": "blinds", "enabled": true,
+   "vendor": "shelly",
+   "shelly": {"address": "192.0.2.17", "generation": 3, "deviceId": "shelly2pmg3-a1b2c3d4e5f6", "channel": 0},
+   "placement": "external", "positioning": true}
+]
+```
+
+What a reader can rely on:
+
+- **A device has exactly one binding** - `shelly`, `eaton` or `bthome` - and the other two are
+  not in the JSON at all (not `null`, not `{}`). The schema guarantees the one.
+- **The fields of one kind only** (`lightKind`, `placement`, `positioning`) are left out when
+  the row has none; a missing `positioning` is "not known", never `false`.
+- **A relay with several outputs is a device per channel**, each with its own `id`; they share
+  `shelly.address` and `shelly.deviceId` and differ by `shelly.channel`.
+- **`enabled: false` devices are in the answer** unless `enabled=true` is asked for - a service
+  that must not use a switched-off device filters.
+- **A Bluetooth sensor names no gateway**: `bthome` is its address alone. Any device of the
+  kind `bthome gateway` may deliver its readings, and an address is in the registry once.
+- **A device of the Eaton configuration has a name the registry gave it** - its room, its
+  kind and its point (`Living room temperature sensor 45`) - because a configuration has none.
+- A device is addressed by `id` here, unlike a member of the household (by name): it has no
+  natural key across the three bindings.
 
 ## Household registry
 
@@ -168,6 +213,7 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `INVALID_HOUSEHOLD_MEMBER` | 400 | the rooms list a room twice, or contain `null`; the same for the permissions |
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
+| `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
 
 The codes are API: a caller may branch on them, so they do not change without their callers.
 `message` and `details` are for people and may be reworded. Every other error — a rejected
@@ -185,14 +231,30 @@ does not know: the value fails while the body is read, and the answer is a `400`
 - **Migrations:** Flyway (JDBC driver) from `src/main/resources/db/migration`. The build
   applies all of them to an empty PostgreSQL in Docker, and runs the ones that change existing
   rows over rows an earlier version would have left (see Run locally).
-- **Schema:** table `eaton_devices` (`point`, `room`, `type`, `gateway` + audit timestamps).
-  The original `device_configuration` table was superseded by it and dropped in `V6`.
-- **Constraints** (`V7`): `(point, gateway)` is unique — it is the natural key of an Eaton
+- **Schema:** one table of devices, `devices` (`V13`, below). The Eaton configuration lived in
+  `eaton_devices` until then (and in `device_configuration` before `V6`); `V13` copied its
+  rows into `devices`, and the service neither reads nor writes `eaton_devices` any more. The
+  table is still there, for the version before this one during a rollout - the next migration
+  drops it.
+- **Constraints of an Eaton point** (`V7` on the old table, `V13` on `devices`): `(gateway,
+  point)` is unique — it is the natural key of an Eaton
   device. Every gateway numbers its own devices, so the same `point` on a *different*
   gateway is perfectly valid and stays allowed; only the exact pair cannot repeat. `point`
   is additionally checked to be within `1..99`, the range an Eaton gateway addresses.
   A duplicate pair surfaces as `409` and an out-of-range `point` as `400`, not `500` —
   see the API table.
+- **Device registry** (`V13`): `devices` - `name`, `room`, `kind`, `vendor`, `enabled`, the
+  three bindings as columns (`shelly_address`, `shelly_generation`, `shelly_device_id`,
+  `shelly_channel`; `eaton_gateway`, `eaton_point`; `bthome_address`) and `light_kind`, `placement`, `positioning`. Checks: exactly one binding
+  is filled, a binding is whole or absent, the vendor `EATON` goes with the Eaton binding and
+  with no other, `light_kind` only on a light, `placement` and `positioning` only on blinds,
+  and the bounds of the SDK models (address, generation 1..4, channel 0..3, point 1..99, the
+  two id formats, the Bluetooth address). Unique: a channel of a Shelly, by its address
+  (`devices_shelly_address_channel_uq`) and by the id it reports over MQTT
+  (`devices_shelly_device_id_channel_uq`) - both indexes on `COALESCE(shelly_channel, -1)`,
+  so a Shelly without a channel counts as one; a point of an Eaton gateway
+  (`devices_eaton_gateway_point_uq`); a Bluetooth sensor, by its address
+  (`devices_bthome_address_uq`).
 - **Household registry** (`V8`–`V10`): `household_members` (`name` unique ignoring letter case
   since `V10`, `phone` unique, phone
   checked to be E.164 since `V9` — `V8` stored `xxx-xxx-xxx` and `V9` converted the existing

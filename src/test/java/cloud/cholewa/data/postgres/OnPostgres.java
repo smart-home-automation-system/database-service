@@ -40,7 +40,7 @@ abstract class OnPostgres {
 
     //A query that gets no answer must fail its test, not hold the build until the build server
     //gives up. Far above anything a statement takes here (milliseconds), far below that
-    private static final Duration PATIENCE = Duration.ofSeconds(30);
+    protected static final Duration PATIENCE = Duration.ofSeconds(30);
 
     private static PostgreSQLContainer container;
 
@@ -97,7 +97,7 @@ abstract class OnPostgres {
     @BeforeEach
     void emptyTheTables() {
         execute("DELETE FROM household_members");
-        execute("DELETE FROM eaton_devices");
+        execute("DELETE FROM devices");
     }
 
     protected void execute(final String sql) {

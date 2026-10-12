@@ -15,12 +15,14 @@ specific to this repo. When opened as part of the workspace, those rules apply h
 
 ## What it stores
 
-Two independent domains, one package each under `cloud.cholewa.data`, both following the same
+Three independent domains, one package each under `cloud.cholewa.data`, all following the same
 layering `api` → `service` → `repository`, with MapStruct mappers between the entities and the
 `smart-home-sdk` models:
 
 - **`device.eaton`** — Eaton device configuration: which data point on which gateway is which
-  device in which room. Table `eaton_devices`. Consumer: `amx-service`, which looks up every
+  device in which room. **No table of its own since `V13`** (HAS-222): a configuration is a row
+  of `devices` with an Eaton binding, and this package is the API over those rows that
+  `amx-service` asks. Consumer: `amx-service`, which looks up every
   incoming datagram (`GET /home/device/configuration/eaton?point=&gateway=`) — roughly every
   30 s, day and night, so this endpoint going quiet is what the Grafana rule
   `database-service not answering` watches.
@@ -28,6 +30,11 @@ layering `api` → `service` → `repository`, with MapStruct mappers between th
   and their Wi-Fi devices (`member_devices`, MAC addresses). Source of truth about who lives
   here; `presence-service` reads it to match UniFi clients to members and keeps only presence
   state and history itself. The API is in the README.
+
+- **`device.registry`** — the device registry (HAS-222, epic HAS-218): every device of the house
+  with its room, its kind and the way it is reached. Table `devices`. Read by the device
+  services at their start and every few minutes; reads only so far. Not routed by the gateway
+  yet (HAS-225).
 
 Routing: inside the cluster callers use k8s DNS (`http://database-service:6200`).
 `api-gateway-service` routes `/device/configuration/**` and `/household/**` here (one `database`
@@ -85,7 +92,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     & gotchas), which is what tells whether a Spring Boot bump kept it.
   - **A constant renamed or removed in the SDK breaks reading**: a row still holding the old
     name cannot be converted, and `GET /household` then fails for the whole registry (the same
-    holds for `room`, `type` and `gateway` of `eaton_devices`). Such an SDK change comes with
+    holds for `room`, `kind`, `vendor`, `eaton_gateway`, `light_kind` and `placement` of `devices`). Such an SDK change comes with
     a migration of the rows here.
   - **Every write is the whole row.** `save()` writes all columns from what was read a moment
     before, so two requests for the same member running at once — `PATCH` and `PUT …/rooms`
@@ -102,7 +109,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   `DuplicateKeyException` (there was one for the Eaton message until HAS-150, and it leaked that
   message into every other duplicate): each service maps its own duplicates to a domain exception
   (409) — Eaton → `DeviceConfigurationExistsException` (the existence check and the
-  `eaton_devices_point_gateway_uq` constraint of V7 give the same 409), household →
+  `devices_eaton_gateway_point_uq` constraint of V13 give the same 409), household →
   `HouseholdException` / `MemberDeviceException` by the constraint in the driver message
   (`household_members_name_upper_uq`, `household_members_phone_uq`,
   `member_devices_mac_uq`, `member_devices_member_name_uq`). **Renaming a constraint or index in a
@@ -132,6 +139,10 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     (What the database does with such a `null` today, seen there with a mapper broken on
     purpose: `rooms` and `permissions` are `NOT NULL`, so the update is refused and the
     operation fails — the grant is not lost silently. A nullable column would be.)
+  **Never call a blocking helper of `OnPostgres` (`row`, `rows`) inside `assertNext` of a
+  `StepVerifier`**: it runs on a reactive thread and fails the expectation with a message
+  that shows the value and not the cause (HAS-222). Take the result with `block(PATIENCE)`
+  first, as `DeviceRegistryOnPostgresTest` does.
   - **A new value of `MemberPermission` must reach every reader before it is stored.**
     `presence-service` reads the whole registry in one call and fails on a value its SDK does
     not know. Today it is on an SDK without the field and ignores it; from the day it has the
@@ -160,6 +171,110 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   `Comparable`: sort with an explicit comparator (the no-arg `collectSortedList()` threw
   `ClassCastException` with two members).
 - Deleting a member cascades to its devices in the database (`ON DELETE CASCADE`), not in code.
+
+## Device registry - the parts worth knowing before changing anything
+
+`device.registry` (HAS-222, `V13`, table `devices`): the devices of the house as `SmartDevice` of
+`smart-home-sdk` >= 1.8.0. **Reads only so far**; the writes are HAS-223.
+
+- **A row is flat, the model is nested.** The three bindings (`shelly`, `eaton`, `bthome`) are
+  columns of the one row; exactly one of them is filled. Each is told by the column it cannot
+  do without - `shelly_address`, `eaton_gateway`, `bthome_address` - in the check of the schema
+  (`devices_one_binding`) and in the mapper alike. Change one, change the other.
+- **`SmartDeviceMapper` is written by hand, on purpose** - the one mapper here that is not
+  MapStruct. MapStruct fills a nested target whenever its source object is there, so every
+  device would come out with all three bindings, two of them objects of nulls; the model is
+  written with `NON_EMPTY`, which drops a `null` and keeps an empty object, and a reader tells
+  the binding by its presence. And the model has no setter for the id, only the builder.
+  `SmartDeviceMapperTest` compares whole models, so a column added to the entity and forgotten
+  in the mapper fails there once the test names it.
+- **The query is built, not derived** (`DeviceRepository`, `R2dbcEntityTemplate` + `Criteria`):
+  three optional filters. A hand-written `(:kind IS NULL OR kind = :kind)` leaves PostgreSQL
+  unable to type a parameter that is null. An enum in a criterion reaches the database as the
+  name of its constant - `DeviceRegistryOnPostgresTest` runs every filter on a real PostgreSQL.
+- **The order is the service's**, in Java: the room and the name as a client reads them (the
+  SDK value, so `bathroom up` before `office`), the name ignoring case, the id last.
+  `SmartDevice` is not `Comparable` - an explicit comparator, as for the members.
+- **A filter is the SDK value, read by the service** (`opening sensor`, `living room`): Spring
+  would convert an enum parameter by the name of its constant. One the SDK does not know is a
+  `ServerWebInputException` - 400 without a code, the way an unknown room in a body is answered.
+  The case does not matter (the enums of the SDK read their values ignoring it) and an empty
+  filter is no filter, like an empty `enabled`.
+- **Unique per binding, by a name each** - `devices_shelly_address_channel_uq`,
+  `devices_shelly_device_id_channel_uq`, `devices_eaton_gateway_point_uq`,
+  `devices_bthome_address_uq`; the writes will map a duplicate by these names (the
+  rule of the household: renaming one in a migration breaks the mapping). **The two of a
+  Shelly are indexes on an expression**, `(..., COALESCE(shelly_channel, -1))`: the task asked
+  for a plain `UNIQUE (address, channel)`, under which a Shelly without a channel could be
+  registered any number of times - two NULLs are never equal. A device may still be
+  registered once without a channel (a gateway) and once per channel. **The second one, on
+  the MQTT id, came from the review**: the services find the device of an event by that id,
+  and a Shelly registered again under a new address would be two devices for one event. A
+  Gen1 device has no id and is not counted by it.
+- **The schema says what it can of "the binding fits the vendor and the kind"** - what needs
+  one row only: the vendor `EATON` and the Eaton binding go together and only together
+  (`devices_eaton_vendor_binding`), `light_kind` is of a light, `placement` and `positioning`
+  are of blinds. The rest is for the writes (HAS-223): which kinds a Shelly or a Bluetooth
+  binding may carry. PostgreSQL names
+  the first check that fails in the alphabetical order of the constraints - a test of one
+  check needs a row that breaks no other.
+- **No `@NotNull` on the entity**: nothing validates an entity here, the schema says what may
+  not be null. (The household entities carry such annotations from before; they do nothing.)
+- **`id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`** - without the `NOT NULL UNIQUE` the
+  older tables add, which only buys a second index on the id.
+- **The schema repeats the bounds of the SDK models** (generation 1..4, channel 0..3, point
+  1..99, the formats): change them in the SDK and in a new migration together. The point range
+  is now stated in a fifth place (see the Eaton section).
+- **The id is exposed** - against "no surrogate id" of the household. A device has no natural
+  key across three bindings, and the SDK model carries the id. The model also *reads* an id a
+  client sends (`readOnly` only took the setter away): the writes must ignore it.
+- **One table of devices** (owner, 2026-10-12: "no two tables for the same thing"). The first
+  version of this task left the Eaton configuration in `eaton_devices` next to `devices`, an
+  Eaton point named in both with nothing tying them. `V13` now copies the configurations in
+  and the Eaton API reads and writes `devices`:
+  - **`EatonConfigurationMapper` is where the two vocabularies meet**: a `SmartDeviceType` is a
+    `DeviceKind`, a `dimmer` is a `light` with `light_kind` `DIMMER`, and back; a kind the old
+    vocabulary has no word for (a sensor on a data point) is **no configuration at all - the
+    lookup answers 404**, because `amx-service` throws on a datagram of the type `other` every
+    time it arrives. `other` itself has no kind: `POST` refuses it (400, the code of an
+    invalid configuration - until `V13` it was stored and never read), and the migration stops
+    on such a row on purpose (`kind` and `name` come out NULL) - the house has none. All three
+    switches of the mapper name every constant: a type or a kind added to the SDK stops the
+    compiler there. The `CASE` of `V13` is the same mapping a third time.
+  - **Do not register an Eaton blinds or light in the registry before `amx-service` handles
+    them.** Its `AmxService.publishOnRabbit` answers `blinds`, `light`, `dimmer` and `other`
+    with a `RuntimeException` ("... not supported yet"): today such a point is a quiet 404,
+    registered it is an ERROR line for every datagram - every press of a wall switch. The
+    task that makes `amx-service` publish `DeviceEvent` comes first.
+  - **A device registered by the registry is a configuration to the Eaton API**: `POST` for
+    its point answers 409, and that API has no update or delete - a wrong room is corrected
+    through the registry (HAS-223), not here.
+  - **A configuration has no name, the registry needs one**: `<Room> <kind> <point>`
+    (`Living room temperature sensor 45`), worded the same in the migration (SQL) and in the
+    mapper (Java). `EatonConfigurationMapperTest` and the rehearsal in
+    `SchemaMigrationOnPostgresTest` pin the same strings - change both.
+  - **The lookup ignores `enabled`**: `amx-service` has to read the datagram of a device
+    whatever the services do with it.
+  - **`eaton_devices` is still there and unread.** The version before `V13` reads it while the
+    two run side by side in a rollout; dropped with it, every lookup of `amx-service` through
+    the old pod would fail for the length of the rollout. **The next migration drops it** -
+    do not forget it in HAS-223. Until then a configuration added through the new version is
+    not in it (seen in the rehearsal: the old pod answers 404 for it), which matters only for
+    the seconds two versions run together. **The other direction is a loss**: the copy runs
+    once, so a configuration the old version stores after `V13` - during the rollout, or
+    after a rollback - is in `eaton_devices` only. The migration that drops the table first
+    copies what `devices` lacks (`WHERE NOT EXISTS` by gateway and point).
+  - The room sensors of the AMX system are the kind `temperature sensor`, added to the SDK for
+    this (1.8.0). At the migration the house had 13 of them, all on the gateway `BLINDS`, and
+    nothing else in the table.
+- **A Bluetooth sensor is bound to no gateway** (owner, 2026-10-12: a second gateway in range
+  should be redundancy, not a second device). The row has `bthome_address` and no gateway
+  column; the address is unique in the registry (`devices_bthome_address_uq`), so a sensor is
+  one device of one kind. Which gateways may deliver it is not stored: every enabled device
+  of the kind `bthome gateway`. HAS-223 was written for a `gatewayDeviceId` on the sensor -
+  its "the gateway must be registered" check has nothing to check any more.
+- **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
+  in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
 ## Eaton configuration — query parameters are validated too
 
@@ -190,7 +305,7 @@ query ran, could not match and answered 404 — a bad request presented as a mis
   on the constraint (`message = EatonDataPoint.OUT_OF_RANGE`) — the default says only "must be
   less than or equal to 99".
 - The range is `EatonDataPoint.MIN` / `MAX`, and it is stated in three more places code here
-  cannot share a constant with: the CHECK of `V7`, the SDK schema (`eaton.yaml`, the bounds of
+  cannot share a constant with: the CHECK of `V13` on `devices.eaton_point` (and of `V7` on the old table), the SDK schema (`eaton.yaml`, the bounds of
   the POST body) and `amx-service` (`MessageUtilities.extractDataPoint`). Change all four
   together.
 - `amx-service` is not affected: it rejects a data point outside 1..99 itself
@@ -260,7 +375,10 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `java … -jar application.jar`, so what follows the image name lands after `-jar`, as a
   program argument, where `-D` means nothing — which would make it
   `--database.ssl-mode=disable`, or the environment variable `DATABASE_SSLMODE`, for an image.
-  Try that before the next rehearsal relies on it.
+  **Tried in the rehearsal of `V13` (HAS-222): `--database.ssl-mode=disable` after the image
+  name works** - the released image ran against a `postgres:17-alpine` without SSL, with the
+  five `database-*` values as `-e` variables. So a rehearsal no longer needs a PostgreSQL
+  that speaks SSL.
 - **A local run talks to the production database.** The `local` profile itself carries no
   connection properties; the IDEA run configuration (`home,local`) loads them from an env file
   outside the repo, and that file points at the managed production database. A local run
@@ -292,7 +410,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 - **The tests on a real PostgreSQL** (HAS-207) are the classes under
   `src/test/java/cloud/cholewa/data/postgres`, all extending `OnPostgres`:
   `SchemaMigrationOnPostgresTest`, `HouseholdRegistryOnPostgresTest`,
-  `EatonConfigurationOnPostgresTest`. What to know before touching them:
+  `EatonConfigurationOnPostgresTest`, `DeviceRegistryOnPostgresTest`. What to know before touching them:
   - **They start the whole application** (`@SpringBootTest`, nothing mocked) on a
     `postgres:17-alpine` in Docker (Testcontainers, versions managed by Boot). The `test`
     profile switches Flyway off; `OnPostgres` switches it on and points `database.*` and
