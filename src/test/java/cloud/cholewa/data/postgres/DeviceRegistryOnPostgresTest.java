@@ -40,9 +40,8 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
         VALUES (now(), 'Kitchen ceiling', 'KITCHEN', 'LIGHT', 'EATON', FALSE, 'LIGHTS', 44, 'DIMMER')""";
 
     private static final String BTHOME_WEATHER = """
-        INSERT INTO devices (created_at, name, room, kind, vendor, enabled, bthome_gateway_device_id, bthome_address)
-        VALUES (now(), 'Garden weather', 'GARDEN', 'WEATHER_STATION', 'SHELLY', TRUE,
-                'shellyblugw-a1b2c3d4e5f6', '7c:c6:b6:00:00:01')""";
+        INSERT INTO devices (created_at, name, room, kind, vendor, enabled, bthome_address)
+        VALUES (now(), 'Garden weather', 'GARDEN', 'WEATHER_STATION', 'SHELLY', TRUE, '7c:c6:b6:00:00:01')""";
 
     @Autowired
     private DeviceRegistryService deviceRegistryService;
@@ -69,10 +68,7 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
                 .kind(DeviceKind.WEATHER_STATION)
                 .vendor(SmartVendor.SHELLY)
                 .enabled(true)
-                .bthome(BthomeBinding.builder()
-                    .gatewayDeviceId("shellyblugw-a1b2c3d4e5f6")
-                    .address("7c:c6:b6:00:00:01")
-                    .build())
+                .bthome(BthomeBinding.builder().address("7c:c6:b6:00:00:01").build())
                 .build(),
             SmartDevice.builder()
                 .id(idOf("Kitchen ceiling"))
@@ -180,9 +176,8 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
 
         refused("""
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
-                                 bthome_gateway_device_id, bthome_address)
-            VALUES (now(), 'Both', 'OFFICE', 'LIGHT', 'SHELLY', TRUE, '192.0.2.17', 2,
-                    'shellyblugw-a1b2c3d4e5f6', '7c:c6:b6:00:00:01')""",
+                                 bthome_address)
+            VALUES (now(), 'Both', 'OFFICE', 'LIGHT', 'SHELLY', TRUE, '192.0.2.17', 2, '7c:c6:b6:00:00:01')""",
             "devices_one_binding");
     }
 
@@ -203,11 +198,6 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, eaton_gateway)
             VALUES (now(), 'No point', 'OFFICE', 'LIGHT', 'EATON', TRUE, 'LIGHTS')""",
             "devices_eaton_binding_whole");
-
-        refused("""
-            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, bthome_address)
-            VALUES (now(), 'No gateway', 'OFFICE', 'OPENING_SENSOR', 'SHELLY', TRUE, '7c:c6:b6:00:00:01')""",
-            "devices_bthome_binding_whole");
     }
 
     @Test
@@ -223,10 +213,9 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
             "devices_eaton_point_range");
 
         refused("""
-            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, bthome_gateway_device_id,
-                                 bthome_address)
-            VALUES (now(), 'Upper case', 'OFFICE', 'OPENING_SENSOR', 'SHELLY', TRUE, 'shellyblugw-a1b2c3d4e5f6',
-                    '7C:C6:B6:00:00:01')""", "devices_bthome_address_format");
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, bthome_address)
+            VALUES (now(), 'Upper case', 'OFFICE', 'OPENING_SENSOR', 'SHELLY', TRUE, '7C:C6:B6:00:00:01')""",
+            "devices_bthome_address_format");
 
         refused("""
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
@@ -325,15 +314,17 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
             "devices_eaton_gateway_point_uq");
     }
 
+    //A Bluetooth sensor is one device, whichever gateway hears it: the row names no gateway, and
+    //the address is all that tells two sensors apart - in another room, of another kind, it is
+    //still the same sensor
     @Test
-    void should_take_a_sensor_of_a_gateway_once() {
+    void should_take_a_bluetooth_sensor_once() {
         execute(BTHOME_WEATHER);
 
         duplicate("""
-            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, bthome_gateway_device_id,
-                                 bthome_address)
-            VALUES (now(), 'The same sensor', 'GARDEN', 'OPENING_SENSOR', 'SHELLY', TRUE,
-                    'shellyblugw-a1b2c3d4e5f6', '7c:c6:b6:00:00:01')""", "devices_bthome_gateway_address_uq");
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, bthome_address)
+            VALUES (now(), 'The same sensor', 'OFFICE', 'OPENING_SENSOR', 'SHELLY', TRUE, '7c:c6:b6:00:00:01')""",
+            "devices_bthome_address_uq");
     }
 
     private List<String> namesOf(final String kind, final String room, final Boolean enabled) {

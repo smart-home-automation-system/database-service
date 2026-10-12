@@ -59,9 +59,6 @@ public class SmartDeviceMapper {
         if (entity.getBthomeAddress() == null) {
             return null;
         }
-        return BthomeBinding.builder()
-            .gatewayDeviceId(entity.getBthomeGatewayDeviceId())
-            .address(entity.getBthomeAddress())
-            .build();
+        return BthomeBinding.builder().address(entity.getBthomeAddress()).build();
     }
 }

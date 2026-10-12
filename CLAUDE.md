@@ -20,7 +20,9 @@ layering `api` → `service` → `repository`, with MapStruct mappers between th
 `smart-home-sdk` models:
 
 - **`device.eaton`** — Eaton device configuration: which data point on which gateway is which
-  device in which room. Table `eaton_devices`. Consumer: `amx-service`, which looks up every
+  device in which room. **No table of its own since `V13`** (HAS-222): a configuration is a row
+  of `devices` with an Eaton binding, and this package is the API over those rows that
+  `amx-service` asks. Consumer: `amx-service`, which looks up every
   incoming datagram (`GET /home/device/configuration/eaton?point=&gateway=`) — roughly every
   30 s, day and night, so this endpoint going quiet is what the Grafana rule
   `database-service not answering` watches.
@@ -173,7 +175,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 ## Device registry - the parts worth knowing before changing anything
 
 `device.registry` (HAS-222, `V13`, table `devices`): the devices of the house as `SmartDevice` of
-`smart-home-sdk` >= 1.7.0. **Reads only so far**; the writes are HAS-223.
+`smart-home-sdk` >= 1.8.0. **Reads only so far**; the writes are HAS-223.
 
 - **A row is flat, the model is nested.** The three bindings (`shelly`, `eaton`, `bthome`) are
   columns of the one row; exactly one of them is filled. Each is told by the column it cannot
@@ -200,7 +202,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   filter is no filter, like an empty `enabled`.
 - **Unique per binding, by a name each** - `devices_shelly_address_channel_uq`,
   `devices_shelly_device_id_channel_uq`, `devices_eaton_gateway_point_uq`,
-  `devices_bthome_gateway_address_uq`; the writes will map a duplicate by these names (the
+  `devices_bthome_address_uq`; the writes will map a duplicate by these names (the
   rule of the household: renaming one in a migration breaks the mapping). **The two of a
   Shelly are indexes on an expression**, `(..., COALESCE(shelly_channel, -1))`: the task asked
   for a plain `UNIQUE (address, channel)`, under which a Shelly without a channel could be
@@ -213,12 +215,9 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   one row only: the vendor `EATON` and the Eaton binding go together and only together
   (`devices_eaton_vendor_binding`), `light_kind` is of a light, `placement` and `positioning`
   are of blinds. The rest is for the writes (HAS-223): which kinds a Shelly or a Bluetooth
-  binding may carry, and that the gateway of a sensor is itself registered. PostgreSQL names
+  binding may carry. PostgreSQL names
   the first check that fails in the alphabetical order of the constraints - a test of one
   check needs a row that breaks no other.
-- **A sensor is unique per gateway, not across the registry** (as the task says): the same
-  Bluetooth address under a second gateway is accepted. Open, from the review - whether one
-  physical sensor may ever be two devices is the owner's to say before the writes exist.
 - **No `@NotNull` on the entity**: nothing validates an entity here, the schema says what may
   not be null. (`EatonDeviceConfigurationEntity` and the household entities carry such
   annotations from before; they do nothing.)
@@ -230,10 +229,36 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **The id is exposed** - against "no surrogate id" of the household. A device has no natural
   key across three bindings, and the SDK model carries the id. The model also *reads* an id a
   client sends (`readOnly` only took the setter away): the writes must ignore it.
-- **An Eaton point is named in two tables now**: `eaton_devices`, which `amx-service` asks for
-  every datagram, and `devices`. Nothing ties them, and no code reads both. Before a service
-  takes the room of a point from the registry, decide which table is the source - until then
-  a point moved in one and not the other is two answers.
+- **One table of devices** (owner, 2026-10-12: "no two tables for the same thing"). The first
+  version of this task left the Eaton configuration in `eaton_devices` next to `devices`, an
+  Eaton point named in both with nothing tying them. `V13` now copies the configurations in
+  and the Eaton API reads and writes `devices`:
+  - **`EatonConfigurationMapper` is where the two vocabularies meet**: a `SmartDeviceType` is a
+    `DeviceKind`, a `dimmer` is a `light` with `light_kind` `DIMMER`, and back; a kind the old
+    vocabulary has no word for answers as `other`. `other` itself has no kind: `POST` refuses
+    it (400, the code of an invalid configuration), and the migration stops on such a row on
+    purpose (`kind` and `name` come out NULL) - the house has none.
+  - **A configuration has no name, the registry needs one**: `<Room> <kind> <point>`
+    (`Living room temperature sensor 45`), worded the same in the migration (SQL) and in the
+    mapper (Java). `EatonConfigurationMapperTest` and the rehearsal in
+    `SchemaMigrationOnPostgresTest` pin the same strings - change both.
+  - **The lookup ignores `enabled`**: `amx-service` has to read the datagram of a device
+    whatever the services do with it.
+  - **`eaton_devices` is still there and unread.** The version before `V13` reads it while the
+    two run side by side in a rollout; dropped with it, every lookup of `amx-service` through
+    the old pod would fail for the length of the rollout. **The next migration drops it** -
+    do not forget it in HAS-223. Until then a configuration added through the new version is
+    not in it (seen in the rehearsal: the old pod answers 404 for it), which matters only for
+    the seconds two versions run together.
+  - The room sensors of the AMX system are the kind `temperature sensor`, added to the SDK for
+    this (1.8.0). At the migration the house had 13 of them, all on the gateway `BLINDS`, and
+    nothing else in the table.
+- **A Bluetooth sensor is bound to no gateway** (owner, 2026-10-12: a second gateway in range
+  should be redundancy, not a second device). The row has `bthome_address` and no gateway
+  column; the address is unique in the registry (`devices_bthome_address_uq`), so a sensor is
+  one device of one kind. Which gateways may deliver it is not stored: every enabled device
+  of the kind `bthome gateway`. HAS-223 was written for a `gatewayDeviceId` on the sensor -
+  its "the gateway must be registered" check has nothing to check any more.
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
@@ -266,7 +291,7 @@ query ran, could not match and answered 404 — a bad request presented as a mis
   on the constraint (`message = EatonDataPoint.OUT_OF_RANGE`) — the default says only "must be
   less than or equal to 99".
 - The range is `EatonDataPoint.MIN` / `MAX`, and it is stated in three more places code here
-  cannot share a constant with: the CHECK of `V7`, the SDK schema (`eaton.yaml`, the bounds of
+  cannot share a constant with: the CHECK of `V13` on `devices.eaton_point` (and of `V7` on the old table), the SDK schema (`eaton.yaml`, the bounds of
   the POST body) and `amx-service` (`MessageUtilities.extractDataPoint`). Change all four
   together.
 - `amx-service` is not affected: it rejects a data point outside 1..99 itself

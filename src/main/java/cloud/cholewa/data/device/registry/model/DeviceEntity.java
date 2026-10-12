@@ -13,10 +13,10 @@ import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
-//A row of the device registry. The three bindings of the SDK model (shelly, eaton, bthome) are
-//columns of the one row here - exactly one of them is filled, which the schema checks (V13).
-//What may not be null is said there as well: nothing validates an entity, so an annotation here
-//would promise what no code keeps.
+//A row of the device registry - the one table of the devices of the house. The three bindings of
+//the SDK model (shelly, eaton, bthome) are columns of the one row here - exactly one of them is
+//filled, which the schema checks (V13). What may not be null is said there as well: nothing
+//validates an entity, so an annotation here would promise what no code keeps.
 @Value
 @Builder
 @Table("devices")
@@ -40,7 +40,6 @@ public class DeviceEntity {
     EatonGatewayType eatonGateway;
     Integer eatonPoint;
 
-    String bthomeGatewayDeviceId;
     String bthomeAddress;
 
     LightKind lightKind;

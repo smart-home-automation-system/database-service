@@ -84,7 +84,7 @@ class SmartDeviceMapperTest {
     }
 
     @Test
-    void should_map_a_sensor_behind_a_bluetooth_gateway() {
+    void should_map_a_bluetooth_sensor_by_its_address_alone() {
         final DeviceEntity entity = row()
             .id(19L)
             .name("Garden weather")
@@ -92,7 +92,6 @@ class SmartDeviceMapperTest {
             .kind(DeviceKind.WEATHER_STATION)
             .vendor(SmartVendor.SHELLY)
             .enabled(true)
-            .bthomeGatewayDeviceId("shellyblugw-a1b2c3d4e5f6")
             .bthomeAddress("7c:c6:b6:00:00:01")
             .build();
 
@@ -103,10 +102,7 @@ class SmartDeviceMapperTest {
             .kind(DeviceKind.WEATHER_STATION)
             .vendor(SmartVendor.SHELLY)
             .enabled(true)
-            .bthome(BthomeBinding.builder()
-                .gatewayDeviceId("shellyblugw-a1b2c3d4e5f6")
-                .address("7c:c6:b6:00:00:01")
-                .build())
+            .bthome(BthomeBinding.builder().address("7c:c6:b6:00:00:01").build())
             .build());
     }
 
@@ -117,8 +113,7 @@ class SmartDeviceMapperTest {
     void should_leave_out_the_bindings_a_device_does_not_have() {
         final SmartDevice shelly = mapper.toDevice(row().shellyAddress("192.0.2.17").shellyGeneration(1).build());
         final SmartDevice eaton = mapper.toDevice(row().eatonGateway(EatonGatewayType.BLINDS).eatonPoint(7).build());
-        final SmartDevice bthome = mapper.toDevice(
-            row().bthomeGatewayDeviceId("shellyblugw-a1b2c3d4e5f6").bthomeAddress("7c:c6:b6:00:00:01").build());
+        final SmartDevice bthome = mapper.toDevice(row().bthomeAddress("7c:c6:b6:00:00:01").build());
 
         assertThat(shelly.getShelly()).isNotNull();
         assertThat(shelly.getEaton()).isNull();

@@ -1,6 +1,7 @@
 package cloud.cholewa.data.postgres;
 
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.FlywayException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 //The migrations of the service on a real PostgreSQL. The schema every class here runs on was built
 //by them, by the Flyway of the application, when the context started; the two rehearsals below
@@ -63,7 +65,7 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             "devices_shelly_address_channel_uq",
             "devices_shelly_device_id_channel_uq",
             "devices_eaton_gateway_point_uq",
-            "devices_bthome_gateway_address_uq"
+            "devices_bthome_address_uq"
         );
     }
 
@@ -110,6 +112,68 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
         assertThat(rows("SELECT room FROM %s.eaton_devices ORDER BY id".formatted(schema)))
             .extracting(configuration -> configuration.get("room"))
             .containsExactly("OFFICE", "LOFT");
+    }
+
+    //V13 over the Eaton configuration as V12 left it: every configuration becomes a device of the
+    //registry - bound to its point, named after its room, its kind and its point, a dimmer as a
+    //light that dims - and the old table is left as it was for the version that still reads it
+    @Test
+    void should_move_the_eaton_configuration_into_the_registry_of_devices() {
+        final String schema = "rehearsal_devices";
+        startOver(schema);
+        migrate(schema, "12");
+
+        execute("""
+            INSERT INTO %1$s.eaton_devices (created_at, updated_at, point, room, type, gateway) VALUES
+                ('2024-01-05 10:00:00', NULL, 45, 'LIVING_ROOM', 'TEMPERATURE_SENSOR', 'BLINDS'),
+                ('2024-01-06 10:00:00', '2024-02-01 08:00:00', 46, 'BATHROOM_DOWN', 'TEMPERATURE_SENSOR', 'BLINDS'),
+                ('2024-01-07 10:00:00', NULL, 7, 'HALL_UP', 'DIMMER', 'LIGHTS'),
+                ('2024-01-08 10:00:00', NULL, 8, 'KITCHEN', 'LIGHT', 'LIGHTS'),
+                ('2024-01-09 10:00:00', NULL, 7, 'OFFICE', 'BLINDS', 'BLINDS')""".formatted(schema));
+
+        migrate(schema, "latest");
+
+        assertThat(rows("""
+            SELECT name || ' | ' || room || ' | ' || kind || ' | ' || COALESCE(light_kind, '-') || ' | '
+                   || eaton_gateway || ' ' || eaton_point || ' | ' || vendor || ' ' || enabled AS device
+            FROM %s.devices ORDER BY id""".formatted(schema)))
+            .extracting(device -> device.get("device"))
+            .containsExactly(
+                "Living room temperature sensor 45 | LIVING_ROOM | TEMPERATURE_SENSOR | - | BLINDS 45 | EATON true",
+                "Bathroom down temperature sensor 46 | BATHROOM_DOWN | TEMPERATURE_SENSOR | - | BLINDS 46 | EATON true",
+                "Hall up light 7 | HALL_UP | LIGHT | DIMMER | LIGHTS 7 | EATON true",
+                "Kitchen light 8 | KITCHEN | LIGHT | RELAY | LIGHTS 8 | EATON true",
+                "Office blinds 7 | OFFICE | BLINDS | - | BLINDS 7 | EATON true"
+            );
+
+        //the times of the configuration travel with it
+        assertThat(row("""
+            SELECT to_char(created_at, 'YYYY-MM-DD HH24:MI') AS created, to_char(updated_at, 'YYYY-MM-DD HH24:MI') AS updated
+            FROM %s.devices WHERE eaton_point = 46""".formatted(schema)))
+            .containsEntry("created", "2024-01-06 10:00")
+            .containsEntry("updated", "2024-02-01 08:00");
+
+        //the version before this one reads eaton_devices while the two run side by side
+        assertThat(row("SELECT count(*) AS configurations FROM %s.eaton_devices".formatted(schema)))
+            .containsEntry("configurations", 5L);
+    }
+
+    //A configuration of the type OTHER has no kind in the registry. The migration stops on it
+    //rather than guess - the house has none, and one that appears has to be decided by hand
+    @Test
+    void should_stop_on_a_configuration_the_registry_has_no_kind_for() {
+        final String schema = "rehearsal_devices_other";
+        startOver(schema);
+        migrate(schema, "12");
+
+        execute("""
+            INSERT INTO %1$s.eaton_devices (created_at, point, room, type, gateway)
+            VALUES (now(), 9, 'GARAGE', 'OTHER', 'LIGHTS')""".formatted(schema));
+
+        assertThatThrownBy(() -> migrate(schema, "latest"))
+            .isInstanceOf(FlywayException.class)
+            .hasMessageContaining("V13__devices.sql")
+            .hasMessageContaining("not-null constraint");
     }
 
     //the container outlives the test, and with it the schema of an earlier run in the same JVM

@@ -83,10 +83,13 @@ route of the gateway.
 
 ## Device registry
 
-The registry of the devices of the house (`SmartDevice` of `smart-home-sdk` >= 1.7.0): what a
+The registry of the devices of the house (`SmartDevice` of `smart-home-sdk` >= 1.8.0): what a
 device is, where it is and how it is reached. The device services (weather, blinds, light,
-heating) read it; so will the dashboard. **Read-only so far** - the writes are the next step,
-and until the gateway routes `/home/device/registry/**` it is reachable inside the cluster only.
+heating) read it; so will the dashboard. **It is the one table of devices**: the Eaton
+configuration above is the same rows, seen through the API `amx-service` asks - a device
+registered there shows up here, and the other way round. **Read-only so far** - the writes are
+the next step, and until the gateway routes `/home/device/registry/**` it is reachable inside
+the cluster only.
 
 | Method | Path | Description |
 |---|---|---|
@@ -114,6 +117,10 @@ What a reader can rely on:
   `shelly.address` and `shelly.deviceId` and differ by `shelly.channel`.
 - **`enabled: false` devices are in the answer** unless `enabled=true` is asked for - a service
   that must not use a switched-off device filters.
+- **A Bluetooth sensor names no gateway**: `bthome` is its address alone. Any device of the
+  kind `bthome gateway` may deliver its readings, and an address is in the registry once.
+- **A device of the Eaton configuration has a name the registry gave it** - its room, its
+  kind and its point (`Living room temperature sensor 45`) - because a configuration has none.
 - A device is addressed by `id` here, unlike a member of the household (by name): it has no
   natural key across the three bindings.
 
@@ -223,9 +230,13 @@ does not know: the value fails while the body is read, and the answer is a `400`
 - **Migrations:** Flyway (JDBC driver) from `src/main/resources/db/migration`. The build
   applies all of them to an empty PostgreSQL in Docker, and runs the ones that change existing
   rows over rows an earlier version would have left (see Run locally).
-- **Schema:** table `eaton_devices` (`point`, `room`, `type`, `gateway` + audit timestamps).
-  The original `device_configuration` table was superseded by it and dropped in `V6`.
-- **Constraints** (`V7`): `(point, gateway)` is unique — it is the natural key of an Eaton
+- **Schema:** one table of devices, `devices` (`V13`, below). The Eaton configuration lived in
+  `eaton_devices` until then (and in `device_configuration` before `V6`); `V13` copied its
+  rows into `devices`, and the service neither reads nor writes `eaton_devices` any more. The
+  table is still there, for the version before this one during a rollout - the next migration
+  drops it.
+- **Constraints of an Eaton point** (`V7` on the old table, `V13` on `devices`): `(gateway,
+  point)` is unique — it is the natural key of an Eaton
   device. Every gateway numbers its own devices, so the same `point` on a *different*
   gateway is perfectly valid and stays allowed; only the exact pair cannot repeat. `point`
   is additionally checked to be within `1..99`, the range an Eaton gateway addresses.
@@ -233,8 +244,7 @@ does not know: the value fails while the body is read, and the answer is a `400`
   see the API table.
 - **Device registry** (`V13`): `devices` - `name`, `room`, `kind`, `vendor`, `enabled`, the
   three bindings as columns (`shelly_address`, `shelly_generation`, `shelly_device_id`,
-  `shelly_channel`; `eaton_gateway`, `eaton_point`; `bthome_gateway_device_id`,
-  `bthome_address`) and `light_kind`, `placement`, `positioning`. Checks: exactly one binding
+  `shelly_channel`; `eaton_gateway`, `eaton_point`; `bthome_address`) and `light_kind`, `placement`, `positioning`. Checks: exactly one binding
   is filled, a binding is whole or absent, the vendor `EATON` goes with the Eaton binding and
   with no other, `light_kind` only on a light, `placement` and `positioning` only on blinds,
   and the bounds of the SDK models (address, generation 1..4, channel 0..3, point 1..99, the
@@ -242,8 +252,8 @@ does not know: the value fails while the body is read, and the answer is a `400`
   (`devices_shelly_address_channel_uq`) and by the id it reports over MQTT
   (`devices_shelly_device_id_channel_uq`) - both indexes on `COALESCE(shelly_channel, -1)`,
   so a Shelly without a channel counts as one; a point of an Eaton gateway
-  (`devices_eaton_gateway_point_uq`); a sensor of a Bluetooth gateway
-  (`devices_bthome_gateway_address_uq`).
+  (`devices_eaton_gateway_point_uq`); a Bluetooth sensor, by its address
+  (`devices_bthome_address_uq`).
 - **Household registry** (`V8`–`V10`): `household_members` (`name` unique ignoring letter case
   since `V10`, `phone` unique, phone
   checked to be E.164 since `V9` — `V8` stored `xxx-xxx-xxx` and `V9` converted the existing
