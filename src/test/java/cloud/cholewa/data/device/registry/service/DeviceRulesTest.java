@@ -127,6 +127,17 @@ class DeviceRulesTest {
         assertThatThrownBy(() -> DeviceRules.check(positioned)).isInstanceOf(InvalidDeviceException.class);
     }
 
+    //"a" and one emoji: three units of a string, which is what the model counts, and two
+    //characters, which is what the schema counts - refused here, in words, before the schema is
+    @Test
+    void should_refuse_a_name_of_fewer_characters_than_the_schema_takes() {
+        final SmartDevice device = device(DeviceKind.LIGHT, SmartVendor.SHELLY, "shelly").name("a😀").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("The name of a device has at least 3 characters");
+    }
+
     //none of the three is asked for: a light may come without the way it is driven, blinds
     //without their placement - "not known" is an answer the model allows
     @Test

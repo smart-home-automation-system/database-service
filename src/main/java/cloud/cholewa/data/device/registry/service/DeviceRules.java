@@ -22,6 +22,8 @@ import java.util.stream.Collectors;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 final class DeviceRules {
 
+    private static final int MIN_NAME_CHARACTERS = 3;
+
     static void check(final SmartDevice device) {
         final Binding binding = bindingOf(device);
         final SmartVendor vendor = device.getVendor();
@@ -40,6 +42,12 @@ final class DeviceRules {
             throw new InvalidDeviceException(
                 "A device of the kind [" + kind.getValue() + "] is not reached through the binding [" + binding
                     + "], only through: " + possible.stream().map(Binding::toString).collect(Collectors.joining(", ")));
+        }
+
+        //The model counts the units of a string, the schema its characters (devices_name_length):
+        //a name of one letter and one emoji is three to the first and two to the second
+        if (device.getName().codePointCount(0, device.getName().length()) < MIN_NAME_CHARACTERS) {
+            throw new InvalidDeviceException("The name of a device has at least " + MIN_NAME_CHARACTERS + " characters");
         }
 
         if (device.getLightKind() != null && kind != DeviceKind.LIGHT) {

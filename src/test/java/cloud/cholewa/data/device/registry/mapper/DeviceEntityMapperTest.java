@@ -148,6 +148,30 @@ class DeviceEntityMapperTest {
         assertThat(entity.getUpdatedAt()).isBetween(aMinuteAgo(), now());
     }
 
+    //A device with everything filled - all three bindings, which no rule would let in, but the
+    //mapper does not judge: a column added to the row and forgotten in the mapper comes out null
+    //here, where the comparisons above would find null on both sides
+    @Test
+    void should_leave_no_column_out_of_a_new_row_or_of_a_replacement() {
+        final SmartDevice everything = SmartDevice.builder()
+            .name("Everything")
+            .room(RoomName.OFFICE)
+            .kind(DeviceKind.BLINDS)
+            .vendor(SmartVendor.SHELLY)
+            .enabled(true)
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(2).deviceId("shelly-1").channel(1).build())
+            .eaton(EatonBinding.builder().gateway(EatonGatewayType.BLINDS).point(7).build())
+            .bthome(BthomeBinding.builder().address("7c:c6:b6:00:00:01").build())
+            .lightKind(LightKind.RELAY)
+            .placement(BlindsPlacement.INTERNAL)
+            .positioning(false)
+            .build();
+        final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED).build();
+
+        assertThat(mapper.toNewEntity(everything)).hasNoNullFieldsOrPropertiesExcept("id", "updatedAt");
+        assertThat(mapper.toReplacement(existing, everything)).hasNoNullFieldsOrProperties();
+    }
+
     //the row with every column filled: whatever is added to it later is copied as well
     @Test
     void should_switch_a_device_off_and_on_and_change_nothing_else_of_its_row() {

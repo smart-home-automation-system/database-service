@@ -149,7 +149,9 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
         assertThat(count()).isZero();
     }
 
-    //what the model itself refuses is a bad request before the registry is asked: no code
+    //What the model itself refuses is a bad request before the registry is asked: no code - and
+    //not the answer of the schema either, which would be the same 400 without a code had a
+    //bound of the model gone missing
     @Test
     void should_refuse_what_the_model_of_the_sdk_refuses() {
         for (final String body : List.of(
@@ -170,7 +172,9 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
                 .exchange()
                 .expectStatus().isBadRequest()
                 .expectBody()
-                .jsonPath("$.errors[0].code").doesNotExist();
+                .jsonPath("$.errors[0].code").doesNotExist()
+                .jsonPath("$.errors[0].message").value(message ->
+                    assertThat(message).isIn("Missing or invalid parameter", "Malformed request body"));
         }
 
         assertThat(count()).isZero();
