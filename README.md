@@ -144,6 +144,9 @@ What a writer has to know:
     | `weather station` | `bthome` |
     | `bthome gateway` | `shelly` |
 
+  - a Shelly of generation 2 or later comes with its `deviceId` - the id it reports under
+    over MQTT. Without it the device could be driven and never heard: the services find the
+    device of an event by that id. A Gen1 device has none to give;
   - `lightKind` only on a `light`; `placement` and `positioning` only on `blinds`. None of the
     three is required.
 - **A binding is one device** - `409` with the code `DEVICE_CONFLICT`, and `details` names
@@ -252,7 +255,7 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
-| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a field of another kind, a change of the kind |
+| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind |
 | `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry |
 
 The codes are API: a caller may branch on them, so they do not change without their callers.

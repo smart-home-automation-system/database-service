@@ -290,10 +290,13 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     bthome; `bthome gateway`: shelly. The switch names every kind, so a kind added to the SDK
     stops the compiler there. The matrix is the service's own reading of "the binding fits
     the vendor and the kind" - the README states it; change both.
-  - **Not asked for, on purpose so far**: a `deviceId` on a Shelly of generation 2 or later
-    (without it no MQTT event finds the device, and the unique index on the id does not
-    count the row), a `lightKind` on a light, a `placement` on blinds. Raised with the owner
-    (2026-10-12) - add them to `DeviceRules` when he says so.
+  - **A Shelly of generation 2 or later needs its `deviceId`** (owner, 2026-10-12; the SDK
+    leaves it optional, for Gen1). Without it no MQTT event finds the device - it can be
+    driven and never heard, with no error anywhere - and the unique index on the id does not
+    count the row, so the same Shelly could be registered again under a new address. The
+    schema does not say it: a row written past the API may still lack the id.
+  - **Not asked for**: a `lightKind` on a light, a `placement` on blinds - "not known" is an
+    answer the model allows.
   - **The rules answer before the schema does** - in words, by the values a client sends. The
     one bound the model and the schema count differently is the name: `@Size` counts UTF-16
     units, `char_length` characters, so the rules count code points. Anything that still
