@@ -55,7 +55,8 @@ class EatonConfigurationOnPostgresTest extends OnPostgres {
             .containsEntry("created", true)
             .satisfies(stored -> assertThat(((Number) stored.get("eaton_point")).intValue()).isEqualTo(7));
 
-        //and nothing is written to the table the configurations used to live in
+        //and nothing is written to the table the configurations used to live in - which nothing
+        //here empties any more either
         assertThat(row("SELECT count(*) AS configurations FROM eaton_devices")).containsEntry("configurations", 0L);
     }
 

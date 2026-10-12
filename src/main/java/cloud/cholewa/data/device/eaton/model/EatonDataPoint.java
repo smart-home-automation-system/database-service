@@ -1,6 +1,6 @@
 package cloud.cholewa.data.device.eaton.model;
 
-//The range of an Eaton data point. It is stated in three more places that code here cannot share a
+//The range of an Eaton data point. It is stated in more places that code here cannot share a
 //constant with: the CHECK constraint of devices.eaton_point (V13), the schema of the SDK models
 //(eaton.yaml, which gives the request body its @Min/@Max) and amx-service, which rejects a data
 //point outside it before it asks (MessageUtilities.extractDataPoint) - change all four together.

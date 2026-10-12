@@ -61,7 +61,6 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             "household_members_phone_uq",
             "member_devices_mac_uq",
             "member_devices_member_name_uq",
-            "eaton_devices_point_gateway_uq",
             "devices_shelly_address_channel_uq",
             "devices_shelly_device_id_channel_uq",
             "devices_eaton_gateway_point_uq",

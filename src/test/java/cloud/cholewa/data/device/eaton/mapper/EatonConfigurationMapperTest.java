@@ -80,22 +80,22 @@ class EatonConfigurationMapperTest {
     void should_answer_a_device_as_the_type_amx_service_knows(
         final DeviceKind kind, final LightKind lightKind, final SmartDeviceType type
     ) {
-        assertThat(mapper.toResponse(device(kind, lightKind)).getType()).isEqualTo(type);
+        assertThat(mapper.toResponse(device(kind, lightKind)).orElseThrow().getType()).isEqualTo(type);
     }
 
     //A kind the Eaton vocabulary has no word for - a motion sensor on a point, should there ever
-    //be one - is "other": amx-service gets an answer and does nothing with it, instead of a 404
-    //that would read as a data point nobody configured
+    //be one - is no configuration: amx-service fails on a datagram of the type "other", every
+    //time it arrives, while a point that is not configured is a quiet 404
     @ParameterizedTest
     @EnumSource(value = DeviceKind.class, names = {"TEMPERATURE_SENSOR", "BLINDS", "LIGHT"}, mode = EnumSource.Mode.EXCLUDE)
-    void should_answer_every_other_kind_as_other(final DeviceKind kind) {
-        assertThat(mapper.toResponse(device(kind, null)).getType()).isEqualTo(SmartDeviceType.OTHER);
+    void should_have_no_configuration_for_a_kind_the_eaton_vocabulary_lacks(final DeviceKind kind) {
+        assertThat(mapper.toResponse(device(kind, null))).isEmpty();
     }
 
     @Test
     void should_answer_the_point_and_the_room_of_the_device() {
         assertThat(mapper.toResponse(device(DeviceKind.BLINDS, null)))
-            .satisfies(response -> {
+            .hasValueSatisfying(response -> {
                 assertThat(response.getPoint()).isEqualTo(44);
                 assertThat(response.getRoom()).isEqualTo(RoomName.KITCHEN);
             });

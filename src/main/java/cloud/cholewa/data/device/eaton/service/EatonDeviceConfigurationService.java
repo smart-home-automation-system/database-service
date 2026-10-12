@@ -32,6 +32,8 @@ public class EatonDeviceConfigurationService {
     private final DeviceRepository repository;
     private final EatonConfigurationMapper mapper;
 
+    //A type the registry has no kind for (other) is refused first: there is nothing to store it
+    //as - until V13 it was stored, and nothing ever read it.
     //a device already registered for the point + gateway is a conflict (409) whichever way it is
     //found - by the check below or, when two requests race past it, by the unique constraint (V13)
     public Mono<Void> add(final EatonDeviceConfiguration deviceConfiguration) {
@@ -63,7 +65,7 @@ public class EatonDeviceConfigurationService {
                     device.getRoom()
                 )
             )
-            .map(mapper::toResponse)
+            .flatMap(device -> Mono.justOrEmpty(mapper.toResponse(device)))
             .switchIfEmpty(Mono.error(() -> new DeviceConfigurationNotFoundException(
                 "Device not found for point: " + dataPoint + " on gateway: " + gateway)));
     }

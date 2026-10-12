@@ -97,7 +97,6 @@ abstract class OnPostgres {
     @BeforeEach
     void emptyTheTables() {
         execute("DELETE FROM household_members");
-        execute("DELETE FROM eaton_devices");
         execute("DELETE FROM devices");
     }
 

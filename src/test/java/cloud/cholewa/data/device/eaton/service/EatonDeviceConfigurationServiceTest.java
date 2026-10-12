@@ -193,6 +193,26 @@ class EatonDeviceConfigurationServiceTest {
             .verifyComplete();
     }
 
+    //a device of the registry on a data point, of a kind amx-service has no type for: to the
+    //lookup that point is not configured
+    @Test
+    void should_report_a_device_of_a_kind_the_eaton_vocabulary_lacks_as_not_configured() {
+        when(repository.findByEatonPoint(BLINDS, 1)).thenReturn(Mono.just(DeviceEntity.builder()
+            .id(6L)
+            .name("Office window sensor")
+            .room(RoomName.OFFICE)
+            .kind(DeviceKind.OPENING_SENSOR)
+            .vendor(SmartVendor.EATON)
+            .enabled(true)
+            .eatonGateway(BLINDS)
+            .eatonPoint(1)
+            .build()));
+
+        sut.get(1, "blinds")
+            .as(StepVerifier::create)
+            .verifyError(DeviceConfigurationNotFoundException.class);
+    }
+
     @Test
     void should_throw_exception_for_unknown_gateway() {
         sut.get(1, "garden")

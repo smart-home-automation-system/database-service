@@ -92,7 +92,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     & gotchas), which is what tells whether a Spring Boot bump kept it.
   - **A constant renamed or removed in the SDK breaks reading**: a row still holding the old
     name cannot be converted, and `GET /household` then fails for the whole registry (the same
-    holds for `room`, `type` and `gateway` of `eaton_devices`). Such an SDK change comes with
+    holds for `room`, `kind`, `vendor`, `eaton_gateway`, `light_kind` and `placement` of `devices`). Such an SDK change comes with
     a migration of the rows here.
   - **Every write is the whole row.** `save()` writes all columns from what was read a moment
     before, so two requests for the same member running at once — `PATCH` and `PUT …/rooms`
@@ -109,7 +109,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   `DuplicateKeyException` (there was one for the Eaton message until HAS-150, and it leaked that
   message into every other duplicate): each service maps its own duplicates to a domain exception
   (409) — Eaton → `DeviceConfigurationExistsException` (the existence check and the
-  `eaton_devices_point_gateway_uq` constraint of V7 give the same 409), household →
+  `devices_eaton_gateway_point_uq` constraint of V13 give the same 409), household →
   `HouseholdException` / `MemberDeviceException` by the constraint in the driver message
   (`household_members_name_upper_uq`, `household_members_phone_uq`,
   `member_devices_mac_uq`, `member_devices_member_name_uq`). **Renaming a constraint or index in a
@@ -219,8 +219,7 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   the first check that fails in the alphabetical order of the constraints - a test of one
   check needs a row that breaks no other.
 - **No `@NotNull` on the entity**: nothing validates an entity here, the schema says what may
-  not be null. (`EatonDeviceConfigurationEntity` and the household entities carry such
-  annotations from before; they do nothing.)
+  not be null. (The household entities carry such annotations from before; they do nothing.)
 - **`id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`** - without the `NOT NULL UNIQUE` the
   older tables add, which only buys a second index on the id.
 - **The schema repeats the bounds of the SDK models** (generation 1..4, channel 0..3, point
@@ -235,9 +234,21 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
   and the Eaton API reads and writes `devices`:
   - **`EatonConfigurationMapper` is where the two vocabularies meet**: a `SmartDeviceType` is a
     `DeviceKind`, a `dimmer` is a `light` with `light_kind` `DIMMER`, and back; a kind the old
-    vocabulary has no word for answers as `other`. `other` itself has no kind: `POST` refuses
-    it (400, the code of an invalid configuration), and the migration stops on such a row on
-    purpose (`kind` and `name` come out NULL) - the house has none.
+    vocabulary has no word for (a sensor on a data point) is **no configuration at all - the
+    lookup answers 404**, because `amx-service` throws on a datagram of the type `other` every
+    time it arrives. `other` itself has no kind: `POST` refuses it (400, the code of an
+    invalid configuration - until `V13` it was stored and never read), and the migration stops
+    on such a row on purpose (`kind` and `name` come out NULL) - the house has none. All three
+    switches of the mapper name every constant: a type or a kind added to the SDK stops the
+    compiler there. The `CASE` of `V13` is the same mapping a third time.
+  - **Do not register an Eaton blinds or light in the registry before `amx-service` handles
+    them.** Its `AmxService.publishOnRabbit` answers `blinds`, `light`, `dimmer` and `other`
+    with a `RuntimeException` ("... not supported yet"): today such a point is a quiet 404,
+    registered it is an ERROR line for every datagram - every press of a wall switch. The
+    task that makes `amx-service` publish `DeviceEvent` comes first.
+  - **A device registered by the registry is a configuration to the Eaton API**: `POST` for
+    its point answers 409, and that API has no update or delete - a wrong room is corrected
+    through the registry (HAS-223), not here.
   - **A configuration has no name, the registry needs one**: `<Room> <kind> <point>`
     (`Living room temperature sensor 45`), worded the same in the migration (SQL) and in the
     mapper (Java). `EatonConfigurationMapperTest` and the rehearsal in
@@ -249,7 +260,10 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
     the old pod would fail for the length of the rollout. **The next migration drops it** -
     do not forget it in HAS-223. Until then a configuration added through the new version is
     not in it (seen in the rehearsal: the old pod answers 404 for it), which matters only for
-    the seconds two versions run together.
+    the seconds two versions run together. **The other direction is a loss**: the copy runs
+    once, so a configuration the old version stores after `V13` - during the rollout, or
+    after a rollback - is in `eaton_devices` only. The migration that drops the table first
+    copies what `devices` lacks (`WHERE NOT EXISTS` by gateway and point).
   - The room sensors of the AMX system are the kind `temperature sensor`, added to the SDK for
     this (1.8.0). At the migration the house had 13 of them, all on the gateway `BLINDS`, and
     nothing else in the table.

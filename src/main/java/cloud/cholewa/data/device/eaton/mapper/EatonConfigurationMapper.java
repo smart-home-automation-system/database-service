@@ -36,12 +36,15 @@ public class EatonConfigurationMapper {
             .build());
     }
 
-    public EatonConfigurationResponse toResponse(final DeviceEntity device) {
-        return EatonConfigurationResponse.builder()
+    //Empty for a device of a kind the Eaton configuration has no type for (a sensor on a data
+    //point, should the registry ever hold one): to amx-service that point is not configured.
+    //Answered as "other" it would be a datagram amx-service fails on, every time it arrives
+    public Optional<EatonConfigurationResponse> toResponse(final DeviceEntity device) {
+        return typeOf(device).map(type -> EatonConfigurationResponse.builder()
             .point(device.getEatonPoint())
-            .type(typeOf(device))
+            .type(type)
             .room(device.getRoom())
-            .build();
+            .build());
     }
 
     private static Optional<DeviceKind> kindOf(final SmartDeviceType type) {
@@ -53,26 +56,31 @@ public class EatonConfigurationMapper {
         };
     }
 
+    //every type named, like kindOf: a type added to the SDK has to be decided here too, or the
+    //compiler stops - a default would store a new kind of light with no way it is driven
     private static LightKind lightKindOf(final SmartDeviceType type) {
         return switch (type) {
             case LIGHT -> LightKind.RELAY;
             case DIMMER -> LightKind.DIMMER;
-            default -> null;
+            case TEMPERATURE_SENSOR, BLINDS, OTHER -> null;
         };
     }
 
-    //what amx-service reads a datagram by; a kind the old vocabulary has no word for is "other"
-    private static SmartDeviceType typeOf(final DeviceEntity device) {
+    //what amx-service reads a datagram by; the kinds are all named, so a new one is decided here
+    private static Optional<SmartDeviceType> typeOf(final DeviceEntity device) {
         return switch (device.getKind()) {
-            case TEMPERATURE_SENSOR -> SmartDeviceType.TEMPERATURE_SENSOR;
-            case BLINDS -> SmartDeviceType.BLINDS;
-            case LIGHT -> device.getLightKind() == LightKind.DIMMER ? SmartDeviceType.DIMMER : SmartDeviceType.LIGHT;
-            default -> SmartDeviceType.OTHER;
+            case TEMPERATURE_SENSOR -> Optional.of(SmartDeviceType.TEMPERATURE_SENSOR);
+            case BLINDS -> Optional.of(SmartDeviceType.BLINDS);
+            case LIGHT -> Optional.of(
+                device.getLightKind() == LightKind.DIMMER ? SmartDeviceType.DIMMER : SmartDeviceType.LIGHT);
+            case OPENING_SENSOR, MOTION_SENSOR, PRESENCE_SENSOR, WEATHER_STATION, BTHOME_GATEWAY -> Optional.empty();
         };
     }
 
     //"Living room temperature sensor 45" - the room, the kind and the point, the wording of the
-    //migration that moved the configurations in (V13). The point keeps two lights of one room apart
+    //migration that moved the configurations in (V13). The point tells two lights of one room
+    //apart; a name is not unique in the registry, and the same point on the other gateway in the
+    //same room would read the same
     private static String nameOf(final EatonDeviceConfiguration configuration, final DeviceKind kind) {
         final String room = configuration.getRoom().name().replace('_', ' ').toLowerCase(Locale.ROOT);
         return room.substring(0, 1).toUpperCase(Locale.ROOT) + room.substring(1)
