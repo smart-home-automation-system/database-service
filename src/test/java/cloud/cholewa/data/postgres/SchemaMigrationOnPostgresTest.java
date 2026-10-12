@@ -31,7 +31,7 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
         final List<Map<String, Object>> applied = rows(
             "SELECT version, success FROM flyway_schema_history WHERE version IS NOT NULL");
 
-        assertThat(migrations).isGreaterThanOrEqualTo(12);
+        assertThat(migrations).isGreaterThanOrEqualTo(13);
         assertThat(applied)
             .hasSize(migrations)
             .allSatisfy(migration -> assertThat(migration).containsEntry("success", true));
@@ -59,7 +59,10 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             "household_members_phone_uq",
             "member_devices_mac_uq",
             "member_devices_member_name_uq",
-            "eaton_devices_point_gateway_uq"
+            "eaton_devices_point_gateway_uq",
+            "devices_shelly_address_channel_uq",
+            "devices_eaton_gateway_point_uq",
+            "devices_bthome_gateway_address_uq"
         );
     }
 
