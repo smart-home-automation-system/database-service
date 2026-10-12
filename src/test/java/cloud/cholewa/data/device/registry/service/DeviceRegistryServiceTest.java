@@ -77,6 +77,16 @@ class DeviceRegistryServiceTest {
             .verifyComplete();
     }
 
+    //"kind=&room=" is what a form sends for fields nobody filled
+    @Test
+    void should_read_an_empty_filter_as_no_filter() {
+        when(repository.findAll(null, null, null)).thenReturn(Flux.empty());
+
+        sut.find("", "  ", null).as(StepVerifier::create)
+            .expectNext(List.of())
+            .verifyComplete();
+    }
+
     //nothing registered is an answer, not an error: the services poll the registry
     @Test
     void should_answer_an_empty_list_when_nothing_matches() {

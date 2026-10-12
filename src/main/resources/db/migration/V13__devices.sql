@@ -5,7 +5,7 @@
 -- The enums are stored as the names of their constants (LIVING_ROOM, BLINDS), as everywhere here.
 CREATE TABLE devices
 (
-    id                       INT PRIMARY KEY NOT NULL UNIQUE GENERATED ALWAYS AS IDENTITY,
+    id                       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at               TIMESTAMP       NOT NULL,
     updated_at               TIMESTAMP,
     name                     VARCHAR(50)     NOT NULL,
@@ -48,6 +48,20 @@ ALTER TABLE devices
     ADD CONSTRAINT devices_bthome_binding_whole
         CHECK ((bthome_address IS NULL) = (bthome_gateway_device_id IS NULL));
 
+-- An Eaton device is reached through a gateway of the AMX system and nothing else is; and what
+-- describes one kind only stays with that kind. The rest of "the binding fits the vendor and
+-- the kind" is the service's to check when a device is stored - it needs other rows.
+ALTER TABLE devices
+    ADD CONSTRAINT devices_eaton_vendor_binding
+        CHECK ((vendor = 'EATON') = (eaton_gateway IS NOT NULL));
+
+ALTER TABLE devices
+    ADD CONSTRAINT devices_light_kind_of_a_light CHECK (light_kind IS NULL OR kind = 'LIGHT');
+
+ALTER TABLE devices
+    ADD CONSTRAINT devices_placement_of_blinds
+        CHECK (num_nonnulls(placement, positioning) = 0 OR kind = 'BLINDS');
+
 -- the bounds of the SDK models, for whatever gets past the API
 ALTER TABLE devices
     ADD CONSTRAINT devices_shelly_address_format
@@ -78,6 +92,12 @@ ALTER TABLE devices
 CREATE UNIQUE INDEX devices_shelly_address_channel_uq
     ON devices (shelly_address, COALESCE(shelly_channel, -1))
     WHERE shelly_address IS NOT NULL;
+
+-- The same for the id a Shelly reports over MQTT: the services find the device of an event by it,
+-- and a device registered a second time under a new address would answer one event twice.
+CREATE UNIQUE INDEX devices_shelly_device_id_channel_uq
+    ON devices (shelly_device_id, COALESCE(shelly_channel, -1))
+    WHERE shelly_device_id IS NOT NULL;
 
 ALTER TABLE devices
     ADD CONSTRAINT devices_eaton_gateway_point_uq UNIQUE (eaton_gateway, eaton_point);

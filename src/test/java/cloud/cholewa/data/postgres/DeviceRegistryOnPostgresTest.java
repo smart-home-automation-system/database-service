@@ -180,8 +180,9 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
 
         refused("""
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
-                                 eaton_gateway, eaton_point)
-            VALUES (now(), 'Both', 'OFFICE', 'LIGHT', 'SHELLY', TRUE, '192.0.2.17', 2, 'LIGHTS', 7)""",
+                                 bthome_gateway_device_id, bthome_address)
+            VALUES (now(), 'Both', 'OFFICE', 'LIGHT', 'SHELLY', TRUE, '192.0.2.17', 2,
+                    'shellyblugw-a1b2c3d4e5f6', '7c:c6:b6:00:00:01')""",
             "devices_one_binding");
     }
 
@@ -232,6 +233,38 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
             VALUES (now(), 'ab', 'OFFICE', 'LIGHT', 'EATON', TRUE, 'LIGHTS', 7)""", "devices_name_length");
     }
 
+    //what the schema can say of "the binding fits the vendor and the kind" without other rows
+    @Test
+    void should_refuse_an_eaton_device_on_another_binding_and_what_belongs_to_another_kind() {
+        refused("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation)
+            VALUES (now(), 'Eaton on a Shelly', 'OFFICE', 'LIGHT', 'EATON', TRUE, '192.0.2.17', 2)""",
+            "devices_eaton_vendor_binding");
+
+        refused("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Shelly on a point', 'OFFICE', 'LIGHT', 'SHELLY', TRUE, 'LIGHTS', 7)""",
+            "devices_eaton_vendor_binding");
+
+        refused("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point,
+                                 light_kind)
+            VALUES (now(), 'Dimmed blinds', 'OFFICE', 'BLINDS', 'EATON', TRUE, 'BLINDS', 7, 'DIMMER')""",
+            "devices_light_kind_of_a_light");
+
+        refused("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point,
+                                 placement)
+            VALUES (now(), 'A light outside', 'OFFICE', 'LIGHT', 'EATON', TRUE, 'LIGHTS', 7, 'EXTERNAL')""",
+            "devices_placement_of_blinds");
+
+        refused("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point,
+                                 positioning)
+            VALUES (now(), 'A light at half', 'OFFICE', 'LIGHT', 'EATON', TRUE, 'LIGHTS', 7, FALSE)""",
+            "devices_placement_of_blinds");
+    }
+
     //a relay with several outputs is a device per channel - the address alone is not unique
     @Test
     void should_take_every_channel_of_one_shelly_once() {
@@ -239,6 +272,24 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
         execute(shelly("'192.0.2.17'", "2", "'shellypro4pm-a1b2c3d4e5f6'", "1"));
 
         duplicate(shelly("'192.0.2.17'", "2", "'shellypro4pm-a1b2c3d4e5f6'", "1"), "devices_shelly_address_channel_uq");
+
+        assertThat(row("SELECT count(*) AS devices FROM devices")).containsEntry("devices", 2L);
+    }
+
+    //The id a Shelly reports over MQTT is what a service finds the device of an event by: the
+    //same id and channel under a second address would be two devices for one event
+    @Test
+    void should_take_a_channel_of_one_mqtt_id_once_whatever_the_address() {
+        execute(shelly("'192.0.2.17'", "2", "'shellypro4pm-a1b2c3d4e5f6'", "0"));
+
+        duplicate(shelly("'192.0.2.99'", "2", "'shellypro4pm-a1b2c3d4e5f6'", "0"), "devices_shelly_device_id_channel_uq");
+    }
+
+    //Gen1 devices report nothing over MQTT and have no id: any number of them may be without one
+    @Test
+    void should_take_any_number_of_shellies_without_an_mqtt_id() {
+        execute(shelly("'192.0.2.20'", "1", "NULL", "NULL"));
+        execute(shelly("'192.0.2.21'", "1", "NULL", "NULL"));
 
         assertThat(row("SELECT count(*) AS devices FROM devices")).containsEntry("devices", 2L);
     }

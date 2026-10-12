@@ -51,10 +51,13 @@ public class DeviceRegistryService {
             .switchIfEmpty(Mono.error(() -> DeviceNotFoundException.forId(id)));
     }
 
-    //A value of a filter that is no value of the enum is a bad request, answered like a
-    //parameter of the wrong type - 400 without a code, the way an unknown room in a body is
+    //A filter left empty is a filter not given - "kind=" is what a form writes for a field
+    //nobody filled, and Spring reads an empty enabled as none the same way. A value that is no
+    //value of the enum is a bad request, answered like a parameter of the wrong type - 400
+    //without a code, the way an unknown room in a body is. The case does not matter: the
+    //enums of the SDK read their values ignoring it
     private static <T> T parsed(final String value, final Function<String, T> parser, final String what) {
-        if (value == null) {
+        if (value == null || value.isBlank()) {
             return null;
         }
         try {

@@ -6,7 +6,6 @@ import cloud.cholewa.home.model.EatonGatewayType;
 import cloud.cholewa.home.model.LightKind;
 import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.SmartVendor;
-import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import lombok.Value;
 import org.springframework.data.annotation.Id;
@@ -16,6 +15,8 @@ import java.time.LocalDateTime;
 
 //A row of the device registry. The three bindings of the SDK model (shelly, eaton, bthome) are
 //columns of the one row here - exactly one of them is filled, which the schema checks (V13).
+//What may not be null is said there as well: nothing validates an entity, so an annotation here
+//would promise what no code keeps.
 @Value
 @Builder
 @Table("devices")
@@ -23,18 +24,12 @@ public class DeviceEntity {
 
     @Id
     Long id;
-    @NotNull
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
-    @NotNull
     String name;
-    @NotNull
     RoomName room;
-    @NotNull
     DeviceKind kind;
-    @NotNull
     SmartVendor vendor;
-    @NotNull
     Boolean enabled;
 
     String shellyAddress;
