@@ -98,6 +98,7 @@ abstract class OnPostgres {
     void emptyTheTables() {
         execute("DELETE FROM household_members");
         execute("DELETE FROM devices");
+        execute("DELETE FROM days_off");
     }
 
     protected void execute(final String sql) {

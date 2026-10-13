@@ -33,7 +33,8 @@ which room) and the **household registry**: the household members and the Wi-Fi 
 (MAC addresses) that represent them, which `presence-service` reads to tell who is at home,
 and each member's **role and rooms**, from which the web dashboard decides what that person
 sees - and the **device registry**: every device of the house with its room, its kind and
-the way it is reached, which the device services read. PostgreSQL is accessed reactively over **R2DBC** (Spring Data R2DBC), the
+the way it is reached, which the device services read - and the **calendar of the house**:
+which days are days off, by the law and by the household. PostgreSQL is accessed reactively over **R2DBC** (Spring Data R2DBC), the
 schema is managed by **Flyway**, and the whole request path is non-blocking (Spring WebFlux
 / Reactor). Domain models come from the shared `smart-home-sdk`.
 
@@ -166,6 +167,45 @@ What a writer has to know:
 - **Calls for one device go one after the other** - every write stores the whole row, as for
   the members of the household.
 
+## Calendar
+
+The calendar of the house (`CalendarDay` of `smart-home-sdk` >= 1.8.0): which days the
+household works. The schedules that differ between workdays and days off - the blinds first -
+ask for it. A day is a `day off` for one of three reasons, and a `workday` otherwise:
+
+1. **the household added it** (`PUT` below) - the only days that are stored;
+2. **it is a statutory holiday of Poland** - computed, never stored: 1 and 6 January, Easter
+   Sunday and Monday, 1 and 3 May, Pentecost Sunday, Corpus Christi, 15 August, 1 and 11
+   November, 24 (since 2025), 25 and 26 December;
+3. **it is a Saturday or a Sunday.**
+
+Until the gateway routes `/home/calendar/**` (HAS-225) it is reachable inside the cluster only.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/home/calendar/days?from=<date>&to=<date>` | Every day of the range, in the order of the calendar: `date`, `type` (`workday` / `day off`) and, for a day off, its `reason`. Both dates are required, written `2026-05-01` and nothing else (no time, no offset); the start is included and the end is not. `200 OK`. `400` (no code) for a date that cannot be read, a range that does not start before it ends, one longer than 2 years or one outside the years 2000 to 2099. |
+| `PUT` | `/home/calendar/days-off/{date}` | The household adds a day off; the body is `{"reason": "..."}`, required, not blank, at most 100 characters, one line (no control characters); the spaces around it are not stored. **Idempotent**: a day set twice is stored once, with the reason of the second call. `200 OK` with the day as the calendar now answers it. `400` (no code) for a date that cannot be read or lies outside 2000 to 2099, and for a body without a reason. |
+| `DELETE` | `/home/calendar/days-off/{date}` | Takes back a day the household added. `204 No Content`; `404` with the code `NOT_FOUND_DAY_OFF` when the day is not stored. |
+
+```json
+[ { "date": "2026-04-30", "type": "workday" },
+  { "date": "2026-05-01", "type": "day off", "reason": "Labour Day" },
+  { "date": "2026-05-02", "type": "day off", "reason": "Saturday" } ]
+```
+
+What a client has to know:
+
+- **Read `type`, not `reason`.** The reason is text for people - what the household wrote, the
+  English name of the holiday, or `Saturday` / `Sunday` - and may be reworded. It does not say
+  which of the three made the day a day off.
+- **The reason of the household comes first**: a holiday or a Saturday it added reads with its
+  reason. Taken back, the day is a day off again by its rule, under the name of the rule.
+- **A holiday or a weekend cannot be made a workday.** They are not stored, so a `DELETE` of
+  one is the `404` - and the day stays a day off.
+- **A workday carries no `reason`** - the field is left out.
+- **The holidays are those of the law as it stands**: Epiphany counts from 2011 and Christmas
+  Eve from 2025, the years they became days off. A holiday added by a later law needs a release.
+
 ## Household registry
 
 Members are addressed by **name** and their devices by **MAC address**: both are unique in
@@ -257,6 +297,7 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
 | `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind |
 | `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry |
+| `NOT_FOUND_DAY_OFF` | 404 | the household added no day off on that date - a holiday and a weekend are days off without being stored |
 
 The codes are API: a caller may branch on them, so they do not change without their callers.
 `message` and `details` are for people and may be reworded. Every other error — a rejected
@@ -278,6 +319,9 @@ does not know: the value fails while the body is read, and the answer is a `400`
   `eaton_devices` until then (and in `device_configuration` before `V6`); `V13` copied its
   rows into `devices`, and `V14` dropped `eaton_devices` - after copying what a version before
   `V13` could still have stored there in the meantime.
+- **Calendar** (`V15`): `days_off` - `date` (the primary key), `reason` (not blank, at most 100
+  characters) and `created_at`. Only the days the household added; the holidays and the
+  weekends are worked out by the service.
 - **Constraints of an Eaton point** (`V7` on the old table, `V13` on `devices`): `(gateway,
   point)` is unique — it is the natural key of an Eaton
   device. Every gateway numbers its own devices, so the same `point` on a *different*

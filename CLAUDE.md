@@ -15,7 +15,7 @@ specific to this repo. When opened as part of the workspace, those rules apply h
 
 ## What it stores
 
-Three independent domains, one package each under `cloud.cholewa.data`, all following the same
+Four independent domains, one package each under `cloud.cholewa.data`, all following the same
 layering `api` → `service` → `repository`, with MapStruct mappers between the entities and the
 `smart-home-sdk` models:
 
@@ -35,6 +35,10 @@ layering `api` → `service` → `repository`, with MapStruct mappers between th
   with its room, its kind and the way it is reached. Table `devices`. Read by the device
   services at their start and every few minutes, written by the administration page to come
   (HAS-231) and from Bruno. Not routed by the gateway yet (HAS-225).
+
+- **`calendar`** - the calendar of the house (HAS-224): which days are days off. The statutory
+  holidays of Poland are computed, the days the household adds are the table `days_off`. Read
+  by the schedules of the blinds to come. Not routed by the gateway yet (HAS-225).
 
 Routing: inside the cluster callers use k8s DNS (`http://database-service:6200`).
 `api-gateway-service` routes `/device/configuration/**` and `/household/**` here (one `database`
@@ -320,6 +324,50 @@ authenticated — the registry's names, phones and MACs are open to whoever reac
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
+## Calendar - the parts worth knowing before changing anything
+
+`calendar` (HAS-224, `V15`, table `days_off`): which days the household works, answered as
+`CalendarDay` of the SDK. Read by the schedules of `blinds-service` to come; the days of the
+household will be written by the dashboard and from Bruno.
+
+- **Only the word of the household is stored.** The holidays are computed (`PolishHolidays`)
+  and the weekends read off the date - a table of holidays would have to be filled for every
+  year, and a year nobody filled would read as a year without holidays.
+- **`PolishHolidays` knows the law, not only the dates**: Epiphany from 2011, Christmas Eve from
+  2025 (the task listed 6 January for the whole range). A holiday the law adds is a line there,
+  a test in `PolishHolidaysTest` and a release. The years 2026 to 2030 are written out in that
+  test by hand, from a printed calendar - not computed a second time.
+- **2000 to 2099 is a bound of the API, not of the Easter rule** (which holds for any Gregorian
+  year): a range outside it is a 400, and so is a day off set outside it - it could never be
+  read back.
+- **The order of the reasons is the household, the holiday, the weekend** (`CalendarService.day`).
+  `CalendarDay` has no field for *why* a day is off beyond the text, and no client should need
+  one: the schedules read `type`.
+- **The reason is required** (owner's task said `{reason}`; required is the choice that can be
+  relaxed later without breaking a caller). `DayOffRequest` is a record of this service, the
+  one body here that is not an SDK model: the SDK has the day as it is answered, with a `type`
+  a client does not choose. Its bound, 100, is the one of `CalendarDay.reason` and of the
+  column - three places.
+- **`DayOffRepository` is not an `R2dbcRepository`**: the key is the date a client names, and
+  `save()` of an entity whose id is set is always an `UPDATE`. "Set this day" is one statement,
+  `INSERT ... ON CONFLICT (date) DO UPDATE`, which keeps `created_at` of a day set again - and
+  it is PostgreSQL's own, so `CalendarOnPostgresTest` is its only test.
+- **Dates are read by a pattern, said on every parameter** (`@DateTimeFormat(pattern =
+  "yyyy-MM-dd")`). Left to the default, Spring reads a `LocalDate` parameter in the short form
+  of the locale of the JVM; `iso = DATE` - the first version - also reads `2026-05-04+02:00` and
+  drops the offset without a word. Spring resolves a pattern strictly, so 30 February is a 400.
+- **Check the years before adding to a date** (`checkRange`): a year of nine digits is a
+  `LocalDate` too, and `plusYears` on the last of them throws - a 500 where a 400 was meant.
+- **The reason is one line of text**: `DayOffRequest` refuses a control character (NUL is
+  valid in JSON and not storable as text in PostgreSQL), and the service stores the reason
+  without the spaces around it.
+- **A refused body is answered by the name of its field** (`details: "reason"`) - that is how
+  `cholewa-commons` answers a `WebExchangeBindException`; a `message` on the constraints of the
+  record would be shown nowhere.
+- **Nothing can make a holiday a workday.** Not asked for; it would be a second kind of row
+  (a day *on*), not a `DELETE`.
+- A new table for the tests on PostgreSQL: `OnPostgres.emptyTheTables` empties it too.
+
 ## Eaton configuration — query parameters are validated too
 
 `GET /device/configuration/eaton` rejects a `point` outside 1..99 with 400 (HAS-145); before, the
@@ -455,7 +503,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `src/test/java/cloud/cholewa/data/postgres`, all extending `OnPostgres`:
   `SchemaMigrationOnPostgresTest`, `HouseholdRegistryOnPostgresTest`,
   `EatonConfigurationOnPostgresTest`, `DeviceRegistryOnPostgresTest`,
-  `DeviceRegistryWritesOnPostgresTest`. What to know before touching them:
+  `DeviceRegistryWritesOnPostgresTest`, `CalendarOnPostgresTest`. What to know before touching them:
   - **They start the whole application** (`@SpringBootTest`, nothing mocked) on a
     `postgres:17-alpine` in Docker (Testcontainers, versions managed by Boot). The `test`
     profile switches Flyway off; `OnPostgres` switches it on and points `database.*` and

@@ -1,6 +1,7 @@
 package cloud.cholewa.data.config;
 
 import cloud.cholewa.commons.error.GlobalErrorExceptionHandler;
+import cloud.cholewa.data.error.DayOffNotFoundException;
 import cloud.cholewa.data.error.DeviceConfigurationExistsException;
 import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
 import cloud.cholewa.data.error.DeviceConflictException;
@@ -31,6 +32,7 @@ import static cloud.cholewa.data.error.CustomErrorDescription.DEVICE_EXIST;
 import static cloud.cholewa.data.error.CustomErrorDescription.HOUSEHOLD_CONFLICT;
 import static cloud.cholewa.data.error.CustomErrorDescription.INVALID_DEVICE;
 import static cloud.cholewa.data.error.CustomErrorDescription.INVALID_HOUSEHOLD_MEMBER;
+import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_DAY_OFF;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_DEVICE;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_DEVICE_CONFIGURATION;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_HOUSEHOLD_MEMBER;
@@ -71,6 +73,7 @@ public class ExceptionHandlerConfig {
                 Map.entry(DeviceNotFoundException.class, new DomainExceptionProcessor(NOT_FOUND, NOT_FOUND_DEVICE)),
                 Map.entry(InvalidDeviceException.class, new DomainExceptionProcessor(BAD_REQUEST, INVALID_DEVICE)),
                 Map.entry(DeviceConflictException.class, new DomainExceptionProcessor(CONFLICT, DEVICE_CONFLICT)),
+                Map.entry(DayOffNotFoundException.class, new DomainExceptionProcessor(NOT_FOUND, NOT_FOUND_DAY_OFF)),
                 //constraints on query parameters and path variables; without it the cholewa-commons
                 //default answers a bare "Validation failure". Not a named cause, so no code
                 Map.entry(HandlerMethodValidationException.class, new InvalidRequestParameterProcessor())
