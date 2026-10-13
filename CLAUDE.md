@@ -34,17 +34,21 @@ layering `api` → `service` → `repository`, with MapStruct mappers between th
 - **`device.registry`** — the device registry (HAS-222, epic HAS-218): every device of the house
   with its room, its kind and the way it is reached. Table `devices`. Read by the device
   services at their start and every few minutes, written by the administration page to come
-  (HAS-231) and from Bruno. Not routed by the gateway yet (HAS-225).
+  (HAS-231) and from Bruno. Routed by the gateway since its 0.5.0 (HAS-225).
 
 - **`calendar`** - the calendar of the house (HAS-224): which days are days off. The statutory
   holidays of Poland are computed, the days the household adds are the table `days_off`. Read
-  by the schedules of the blinds to come. Not routed by the gateway yet (HAS-225).
+  by the schedules of the blinds to come. Routed by the gateway since its 0.5.0 (HAS-225).
 
 Routing: inside the cluster callers use k8s DNS (`http://database-service:6200`).
-`api-gateway-service` routes `/device/configuration/**` and `/household/**` here (one `database`
-route with both paths, HAS-150). A new top-level path of this service needs adding to that route,
-or it answers "No static resource" (404) from outside the cluster. Nothing on the gateway is
-authenticated — the registry's names, phones and MACs are open to whoever reaches the ingress.
+`api-gateway-service` routes `/device/configuration/**`, `/device/registry/**`, `/household/**`
+and `/calendar/**` here (one `database` route with all of them, HAS-150 and HAS-225). A new
+top-level path of this service - and a third branch of `/device` - needs adding to that route,
+or it answers "No static resource" (404) from outside the cluster. **The tails of that route are
+open**: an endpoint added below a routed path is reachable from outside the day it is deployed,
+every method, without a gateway change - so nothing that must stay inside the cluster goes
+below one of them. Nothing on the gateway is authenticated — the registry's names, phones and
+MACs, and the writes of the device registry, are open to whoever reaches the ingress.
 
 ## Household registry — the parts worth knowing before changing anything
 
