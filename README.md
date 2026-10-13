@@ -75,8 +75,8 @@ Base path `/home` (`spring.webflux.base-path`). Inside the cluster the services 
 directly over k8s DNS (`http://database-service:6200`) — `amx-service` for the Eaton lookup
 (`internal.service.database` in its configuration). From outside, `api-gateway-service` routes
 `/home/device/configuration/**`, `/home/device/registry/**`, `/home/household/**` and
-`/home/calendar/**` here (the registry and the calendar since the gateway 0.5.0) — all unauthenticated, like
-every route of the gateway, the writes included.
+`/home/calendar/**` here (the device registry and the calendar since the gateway 0.5.0) — all
+unauthenticated, like every route of the gateway, the writes included.
 
 | Method | Path | Description |
 |---|---|---|
@@ -91,7 +91,9 @@ device is, where it is and how it is reached. The device services (weather, blin
 heating) read it; so will the dashboard. **It is the one table of devices**: the Eaton
 configuration above is the same rows, seen through the API `amx-service` asks - a device
 registered there shows up here, and the other way round. The gateway routes
-`/home/device/registry/**` since its 0.5.0 (HAS-225).
+`/home/device/registry/**` since its 0.5.0 (HAS-225), the writes below included: whoever reaches
+the ingress can move or remove an Eaton device, and with it what `amx-service` reads for its
+point.
 
 | Method | Path | Description |
 |---|---|---|

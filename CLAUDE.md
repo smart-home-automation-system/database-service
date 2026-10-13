@@ -42,13 +42,17 @@ layering `api` → `service` → `repository`, with MapStruct mappers between th
 
 Routing: inside the cluster callers use k8s DNS (`http://database-service:6200`).
 `api-gateway-service` routes `/device/configuration/**`, `/device/registry/**`, `/household/**`
-and `/calendar/**` here (one `database` route with all of them, HAS-150 and HAS-225). A new
-top-level path of this service - and a third branch of `/device` - needs adding to that route,
-or it answers "No static resource" (404) from outside the cluster. **The tails of that route are
-open**: an endpoint added below a routed path is reachable from outside the day it is deployed,
-every method, without a gateway change - so nothing that must stay inside the cluster goes
-below one of them. Nothing on the gateway is authenticated — the registry's names, phones and
-MACs, and the writes of the device registry, are open to whoever reaches the ingress.
+and `/calendar/**` here (one `database` route with all of them; the registry and the calendar
+since HAS-225). A new top-level path of this service - and a third branch of `/device` - needs
+adding to that route, or it answers "No static resource" (404) from outside the cluster. **The
+tails of that route are open**: an endpoint added below a routed path is reachable from outside
+the day it is deployed, every method, without a gateway change. **Treat the whole service as
+published**: the gateway matches the path as it was sent, so a dot segment below a tail
+(`/household/../x`) is forwarded too, and an unrouted path is hidden only while no hop
+normalises it. An endpoint that must stay inside the cluster does not belong in this service
+as the route stands. Nothing on the gateway is authenticated — the names, phones and MACs of
+the household registry, the names, rooms and LAN addresses of the device registry, and the
+writes of both registries and of the calendar are open to whoever reaches the ingress.
 
 ## Household registry — the parts worth knowing before changing anything
 
