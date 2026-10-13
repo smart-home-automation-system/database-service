@@ -74,8 +74,9 @@ schema is managed by **Flyway**, and the whole request path is non-blocking (Spr
 Base path `/home` (`spring.webflux.base-path`). Inside the cluster the services call it
 directly over k8s DNS (`http://database-service:6200`) — `amx-service` for the Eaton lookup
 (`internal.service.database` in its configuration). From outside, `api-gateway-service` routes
-`/home/device/configuration/**` and `/home/household/**` here — both unauthenticated, like every
-route of the gateway.
+`/home/device/configuration/**`, `/home/device/registry/**`, `/home/household/**` and
+`/home/calendar/**` here (the device registry and the calendar since the gateway 0.5.0) — all
+unauthenticated, like every route of the gateway, the writes included.
 
 | Method | Path | Description |
 |---|---|---|
@@ -89,8 +90,10 @@ The registry of the devices of the house (`SmartDevice` of `smart-home-sdk` >= 1
 device is, where it is and how it is reached. The device services (weather, blinds, light,
 heating) read it; so will the dashboard. **It is the one table of devices**: the Eaton
 configuration above is the same rows, seen through the API `amx-service` asks - a device
-registered there shows up here, and the other way round. Until the gateway routes
-`/home/device/registry/**` it is reachable inside the cluster only.
+registered there shows up here, and the other way round. The gateway routes
+`/home/device/registry/**` since its 0.5.0 (HAS-225), the writes below included: whoever reaches
+the ingress can move or remove an Eaton device, and with it what `amx-service` reads for its
+point.
 
 | Method | Path | Description |
 |---|---|---|
@@ -179,7 +182,7 @@ ask for it. A day is a `day off` for one of three reasons, and a `workday` other
    November, 24 (since 2025), 25 and 26 December;
 3. **it is a Saturday or a Sunday.**
 
-Until the gateway routes `/home/calendar/**` (HAS-225) it is reachable inside the cluster only.
+The gateway routes `/home/calendar/**` since its 0.5.0 (HAS-225).
 
 | Method | Path | Description |
 |---|---|---|
