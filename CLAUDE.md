@@ -246,19 +246,21 @@ writes of both registries and of the calendar are open to whoever reaches the in
   Eaton point named in both with nothing tying them. `V13` now copies the configurations in
   and the Eaton API reads and writes `devices`:
   - **`EatonConfigurationMapper` is where the two vocabularies meet**: a `SmartDeviceType` is a
-    `DeviceKind`, a `dimmer` is a `light` with `light_kind` `DIMMER`, and back; a kind the old
-    vocabulary has no word for (a sensor on a data point) is **no configuration at all - the
-    lookup answers 404**, because `amx-service` throws on a datagram of the type `other` every
-    time it arrives. `other` itself has no kind: `POST` refuses it (400, the code of an
-    invalid configuration - until `V13` it was stored and never read), and the migration stops
-    on such a row on purpose (`kind` and `name` come out NULL) - the house has none. All three
-    switches of the mapper name every constant: a type or a kind added to the SDK stops the
-    compiler there. The `CASE` of `V13` is the same mapping a third time.
-  - **Do not register an Eaton blinds or light in the registry before `amx-service` handles
-    them.** Its `AmxService.publishOnRabbit` answers `blinds`, `light`, `dimmer` and `other`
-    with a `RuntimeException` ("... not supported yet"): today such a point is a quiet 404,
-    registered it is an ERROR line for every datagram - every press of a wall switch. The
-    task that makes `amx-service` publish `DeviceEvent` comes first.
+    `DeviceKind`, a `dimmer` is a `light` with `light_kind` `DIMMER`, and back; a `push button`
+    and a `motion sensor` (HAS-288, SDK 1.9.0) are the kinds of the same names. A kind the old
+    vocabulary has no word for (an opening or a presence sensor on a data point) is **no
+    configuration at all - the lookup answers 404**, because `amx-service` throws on a datagram
+    of the type `other` every time it arrives. `other` itself has no kind: `POST` refuses it
+    (400, the code of an invalid configuration - until `V13` it was stored and never read), and
+    the migration stops on such a row on purpose (`kind` and `name` come out NULL) - the house
+    has none. All three switches of the mapper name every constant: a type or a kind added to
+    the SDK stops the compiler there. The `CASE` of `V13` is the same mapping a third time
+    (from before the two new types; a migration is never edited).
+  - **`amx-service` reads what the lookup answers** and publishes a `DeviceEvent` for blinds,
+    lights, dimmers (since its 2.1.0, HAS-229), push buttons and motion sensors (HAS-288). A new
+    type is answered only once `amx-service` runs an SDK that knows it - on an older one every
+    datagram of that point fails its lookup. The Eaton devices of the house were registered
+    device by device on 2026-10-15, each one tested.
   - **A device registered by the registry is a configuration to the Eaton API**: `POST` for
     its point answers 409, and that API has no update or delete - a wrong room is corrected
     through the registry (`PUT`), not here.
@@ -298,7 +300,7 @@ writes of both registries and of the calendar are open to whoever reaches the in
   - **`DeviceRules` is what the model leaves open**: one binding; the vendor `eaton` only with
     the Eaton binding and the other way round; a Shelly binding only for the vendor `shelly`
     (a Bluetooth sensor is `shelly` or `other`); and per kind the bindings it is reached
-    through - `blinds` / `light`: shelly, eaton; the four sensors: any; `weather station`:
+    through - `blinds` / `light` / `push button`: shelly, eaton; the four sensors: any; `weather station`:
     bthome; `bthome gateway`: shelly. The switch names every kind, so a kind added to the SDK
     stops the compiler there. The matrix is the service's own reading of "the binding fits
     the vendor and the kind" - the README states it; change both.

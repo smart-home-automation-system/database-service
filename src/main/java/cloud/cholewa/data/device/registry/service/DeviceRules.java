@@ -93,13 +93,14 @@ final class DeviceRules {
     }
 
     //Every kind named: a kind added to the SDK has to be decided here, or the compiler stops.
-    //What moves and what lights is wired - a relay of a Shelly or an actor of the AMX system. A
+    //What moves and what lights is wired - a relay of a Shelly or an actor of the AMX system - and
+    //so is a push button: a wall transmitter of the AMX system, or an input of a Shelly. A
     //sensor is whatever reports it: the room sensors of the AMX system, a Shelly on the network,
     //a Bluetooth one. The weather station is read through a Bluetooth gateway, and such a gateway
     //is itself a Shelly on the network
     private static Set<Binding> bindingsOf(final DeviceKind kind) {
         return switch (kind) {
-            case BLINDS, LIGHT -> EnumSet.of(Binding.SHELLY, Binding.EATON);
+            case BLINDS, LIGHT, PUSH_BUTTON -> EnumSet.of(Binding.SHELLY, Binding.EATON);
             case OPENING_SENSOR, MOTION_SENSOR, PRESENCE_SENSOR, TEMPERATURE_SENSOR -> EnumSet.allOf(Binding.class);
             case WEATHER_STATION -> EnumSet.of(Binding.BTHOME);
             case BTHOME_GATEWAY -> EnumSet.of(Binding.SHELLY);
