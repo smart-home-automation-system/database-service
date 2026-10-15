@@ -46,7 +46,10 @@ class DeviceRulesTest {
         "TEMPERATURE_SENSOR, OTHER, bthome",
         "WEATHER_STATION, SHELLY, bthome",
         "WEATHER_STATION, OTHER, bthome",
-        "BTHOME_GATEWAY, SHELLY, shelly"
+        "BTHOME_GATEWAY, SHELLY, shelly",
+        "PUSH_BUTTON, EATON, eaton",
+        "PUSH_BUTTON, SHELLY, shelly",
+        "MOTION_SENSOR, EATON, eaton"
     })
     void should_take_a_device_whose_binding_fits_its_vendor_and_its_kind(
         final DeviceKind kind, final SmartVendor vendor, final String binding
@@ -95,7 +98,8 @@ class DeviceRulesTest {
         "WEATHER_STATION, SHELLY, shelly, bthome",
         "WEATHER_STATION, EATON, eaton, bthome",
         "BTHOME_GATEWAY, SHELLY, bthome, shelly",
-        "BTHOME_GATEWAY, EATON, eaton, shelly"
+        "BTHOME_GATEWAY, EATON, eaton, shelly",
+        "PUSH_BUTTON, SHELLY, bthome, 'shelly, eaton'"
     })
     void should_refuse_a_binding_the_kind_is_not_reached_through_and_say_which_it_is(
         final DeviceKind kind, final SmartVendor vendor, final String binding, final String possible

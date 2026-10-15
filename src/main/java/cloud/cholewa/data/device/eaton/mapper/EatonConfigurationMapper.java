@@ -36,8 +36,8 @@ public class EatonConfigurationMapper {
             .build());
     }
 
-    //Empty for a device of a kind the Eaton configuration has no type for (a sensor on a data
-    //point, should the registry ever hold one): to amx-service that point is not configured.
+    //Empty for a device of a kind the Eaton configuration has no type for (an opening sensor on a
+    //data point, should the registry ever hold one): to amx-service that point is not configured.
     //Answered as "other" it would be a datagram amx-service fails on, every time it arrives
     public Optional<EatonConfigurationResponse> toResponse(final DeviceEntity device) {
         return typeOf(device).map(type -> EatonConfigurationResponse.builder()
@@ -52,6 +52,8 @@ public class EatonConfigurationMapper {
             case TEMPERATURE_SENSOR -> Optional.of(DeviceKind.TEMPERATURE_SENSOR);
             case BLINDS -> Optional.of(DeviceKind.BLINDS);
             case LIGHT, DIMMER -> Optional.of(DeviceKind.LIGHT);
+            case PUSH_BUTTON -> Optional.of(DeviceKind.PUSH_BUTTON);
+            case MOTION_SENSOR -> Optional.of(DeviceKind.MOTION_SENSOR);
             case OTHER -> Optional.empty();
         };
     }
@@ -62,18 +64,24 @@ public class EatonConfigurationMapper {
         return switch (type) {
             case LIGHT -> LightKind.RELAY;
             case DIMMER -> LightKind.DIMMER;
-            case TEMPERATURE_SENSOR, BLINDS, OTHER -> null;
+            case TEMPERATURE_SENSOR, BLINDS, PUSH_BUTTON, MOTION_SENSOR, OTHER -> null;
         };
     }
 
-    //what amx-service reads a datagram by; the kinds are all named, so a new one is decided here
+    //what amx-service reads a datagram by; the kinds are all named, so a new one is decided here.
+    //A push button and a motion sensor (the PIR sensors of the AMX system) only report: amx-service
+    //publishes their frames as device events, and never sends them anything. amx-service must know
+    //both types (smart-home-sdk 1.9.0) before this answers either - on an older version every
+    //datagram of such a point fails its lookup
     private static Optional<SmartDeviceType> typeOf(final DeviceEntity device) {
         return switch (device.getKind()) {
             case TEMPERATURE_SENSOR -> Optional.of(SmartDeviceType.TEMPERATURE_SENSOR);
             case BLINDS -> Optional.of(SmartDeviceType.BLINDS);
             case LIGHT -> Optional.of(
                 device.getLightKind() == LightKind.DIMMER ? SmartDeviceType.DIMMER : SmartDeviceType.LIGHT);
-            case OPENING_SENSOR, MOTION_SENSOR, PRESENCE_SENSOR, WEATHER_STATION, BTHOME_GATEWAY -> Optional.empty();
+            case PUSH_BUTTON -> Optional.of(SmartDeviceType.PUSH_BUTTON);
+            case MOTION_SENSOR -> Optional.of(SmartDeviceType.MOTION_SENSOR);
+            case OPENING_SENSOR, PRESENCE_SENSOR, WEATHER_STATION, BTHOME_GATEWAY -> Optional.empty();
         };
     }
 

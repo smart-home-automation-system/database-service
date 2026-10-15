@@ -26,7 +26,9 @@ class EatonConfigurationMapperTest {
         "TEMPERATURE_SENSOR, TEMPERATURE_SENSOR, -",
         "BLINDS, BLINDS, -",
         "LIGHT, LIGHT, RELAY",
-        "DIMMER, LIGHT, DIMMER"
+        "DIMMER, LIGHT, DIMMER",
+        "PUSH_BUTTON, PUSH_BUTTON, -",
+        "MOTION_SENSOR, MOTION_SENSOR, -"
     })
     void should_register_a_type_as_its_kind(final SmartDeviceType type, final DeviceKind kind, final LightKind lightKind) {
         final DeviceEntity device = mapper.toDevice(configuration(type, RoomName.OFFICE, 7)).orElseThrow();
@@ -60,7 +62,9 @@ class EatonConfigurationMapperTest {
         "TEMPERATURE_SENSOR, LIVING_ROOM, 45, Living room temperature sensor 45",
         "BLINDS, BATHROOM_DOWN, 7, Bathroom down blinds 7",
         "DIMMER, HALL_UP, 99, Hall up light 99",
-        "LIGHT, LOFT, 1, Loft light 1"
+        "LIGHT, LOFT, 1, Loft light 1",
+        "PUSH_BUTTON, BATHROOM_UP, 80, Bathroom up push button 80",
+        "MOTION_SENSOR, STAIRS, 92, Stairs motion sensor 92"
     })
     void should_name_a_configuration_by_its_room_its_kind_and_its_point(
         final SmartDeviceType type, final RoomName room, final int point, final String name
@@ -75,7 +79,9 @@ class EatonConfigurationMapperTest {
         "LIGHT, RELAY, LIGHT",
         "LIGHT, DIMMER, DIMMER",
         "LIGHT, RGBW, LIGHT",
-        "LIGHT, -, LIGHT"
+        "LIGHT, -, LIGHT",
+        "PUSH_BUTTON, -, PUSH_BUTTON",
+        "MOTION_SENSOR, -, MOTION_SENSOR"
     })
     void should_answer_a_device_as_the_type_amx_service_knows(
         final DeviceKind kind, final LightKind lightKind, final SmartDeviceType type
@@ -83,11 +89,15 @@ class EatonConfigurationMapperTest {
         assertThat(mapper.toResponse(device(kind, lightKind)).orElseThrow().getType()).isEqualTo(type);
     }
 
-    //A kind the Eaton vocabulary has no word for - a motion sensor on a point, should there ever
+    //A kind the Eaton vocabulary has no word for - an opening sensor on a point, should there ever
     //be one - is no configuration: amx-service fails on a datagram of the type "other", every
     //time it arrives, while a point that is not configured is a quiet 404
     @ParameterizedTest
-    @EnumSource(value = DeviceKind.class, names = {"TEMPERATURE_SENSOR", "BLINDS", "LIGHT"}, mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(
+        value = DeviceKind.class,
+        names = {"TEMPERATURE_SENSOR", "BLINDS", "LIGHT", "PUSH_BUTTON", "MOTION_SENSOR"},
+        mode = EnumSource.Mode.EXCLUDE
+    )
     void should_have_no_configuration_for_a_kind_the_eaton_vocabulary_lacks(final DeviceKind kind) {
         assertThat(mapper.toResponse(device(kind, null))).isEmpty();
     }
