@@ -82,7 +82,7 @@ unauthenticated, like every route of the gateway, the writes included.
 |---|---|---|
 | `POST` | `/home/device/configuration/eaton` | Register an Eaton device configuration (`EatonDeviceConfiguration`: point, room, type, gateway — all four required, `point` in the range 1..99). Returns `201 Created`; an incomplete body or a `point` outside the range returns `400 Bad Request`; a configuration already registered for that point + gateway returns `409 Conflict`. |
 | | | *Since the registry (`V13`):* a configuration is stored as a device of the registry (below), so the `type` `other` - which has no kind there - is refused with `400`, and a point a device of the registry already holds is the same `409`. |
-| `GET` | `/home/device/configuration/eaton?point=<n>&gateway=<name>` | Look up the configuration for a data point on a gateway. `point` is a number in the range 1..99, `gateway` is `blinds` or `lights`, matched case-insensitively (`amx-service` sends `BLINDS`). Returns `200 OK` with `EatonConfigurationResponse`; `404 Not Found` when no configuration exists for the pair; `400 Bad Request` when `point` is outside the range or not a number, or `gateway` is not one of the known values. |
+| `GET` | `/home/device/configuration/eaton?point=<n>&gateway=<name>` | Look up the configuration for a data point on a gateway. `point` is a number in the range 1..99, `gateway` is `blinds` or `lights`, matched case-insensitively (`amx-service` sends `BLINDS`). Returns `200 OK` with `EatonConfigurationResponse` - its `type` is `temperature sensor`, `blinds`, `light`, `dimmer`, `push button` or `motion sensor` (the last two since HAS-288, for `amx-service` on `smart-home-sdk` 1.9.0 or later); `404 Not Found` when no configuration exists for the pair, or the device there is of a kind the Eaton configuration has no type for; `400 Bad Request` when `point` is outside the range or not a number, or `gateway` is not one of the known values. |
 
 ## Device registry
 
@@ -143,7 +143,7 @@ What a writer has to know:
 
     | kind | bindings |
     |---|---|
-    | `blinds`, `light` | `shelly`, `eaton` |
+    | `blinds`, `light`, `push button` | `shelly`, `eaton` |
     | `opening sensor`, `motion sensor`, `presence sensor`, `temperature sensor` | `shelly`, `eaton`, `bthome` |
     | `weather station` | `bthome` |
     | `bthome gateway` | `shelly` |
