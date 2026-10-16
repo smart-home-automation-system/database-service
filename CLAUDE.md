@@ -105,7 +105,11 @@ writes of both registries and of the calendar are open to whoever reaches the in
   - **A constant renamed or removed in the SDK breaks reading**: a row still holding the old
     name cannot be converted, and `GET /household` then fails for the whole registry (the same
     holds for `room`, `kind`, `vendor`, `eaton_gateway`, `light_kind` and `placement` of `devices`). Such an SDK change comes with
-    a migration of the rows here.
+    a migration of the rows here. **A renamed value is not**: SDK 1.10.0 (HAS-289) writes
+    `HALL_UP` as `hall up` instead of `hall_up` - the rows keep `HALL_UP`, only the JSON
+    changes, and the SDK still reads `hall_up` for one release
+    (`DeviceRegistryControllerTest` pins both spellings). Every reader of the registries has
+    to be on 1.10.0 before a room is set to it.
   - **Every write is the whole row.** `save()` writes all columns from what was read a moment
     before, so two requests for the same member running at once — `PATCH` and `PUT …/rooms`
     fired together by a form — can undo each other, and both answer 200. No version column

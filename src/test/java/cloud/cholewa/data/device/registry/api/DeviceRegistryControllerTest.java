@@ -29,6 +29,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -220,6 +221,45 @@ class DeviceRegistryControllerTest {
 
         //the body is read by the values of the SDK, binding included
         verify(deviceRegistryService).add(LIGHT_AS_SENT);
+    }
+
+    //HAS-289: the corridor upstairs is written with a space since smart-home-sdk 1.10.0, and the
+    //old spelling of a client still on 1.9.0 is read for one release - the row holds HALL_UP either way
+    @Test
+    void should_read_hall_up_in_both_spellings_and_answer_it_with_a_space() {
+        final SmartDevice asSent = SmartDevice.builder()
+            .name("Kitchen ceiling")
+            .room(RoomName.HALL_UP)
+            .kind(DeviceKind.LIGHT)
+            .enabled(false)
+            .vendor(SmartVendor.EATON)
+            .eaton(EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(44).build())
+            .lightKind(LightKind.DIMMER)
+            .build();
+        final SmartDevice stored = SmartDevice.builder()
+            .id(18L)
+            .name("Kitchen ceiling")
+            .room(RoomName.HALL_UP)
+            .kind(DeviceKind.LIGHT)
+            .enabled(false)
+            .vendor(SmartVendor.EATON)
+            .eaton(EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(44).build())
+            .lightKind(LightKind.DIMMER)
+            .build();
+        when(deviceRegistryService.add(any())).thenReturn(Mono.just(stored));
+
+        for (final String room : List.of("hall up", "hall_up")) {
+            webTestClient.post()
+                .uri("/device/registry")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(LIGHT_JSON.replace("\"kitchen\"", "\"" + room + "\""))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody()
+                .jsonPath("$.room").isEqualTo("hall up");
+        }
+
+        verify(deviceRegistryService, times(2)).add(asSent);
     }
 
     //what the model refuses never reaches the service: a required field, a bound, a binding
