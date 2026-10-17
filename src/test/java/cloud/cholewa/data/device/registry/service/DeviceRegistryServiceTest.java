@@ -247,8 +247,6 @@ class DeviceRegistryServiceTest {
     @Test
     void should_report_a_device_that_is_not_registered_to_every_write() {
         when(repository.findById(7L)).thenReturn(Mono.empty());
-        when(repository.findAll(DeviceKind.BLINDS, null, null)).thenReturn(Flux.empty());
-        when(repository.deleteById(7L)).thenReturn(Mono.just(0L));
 
         sut.replace(7L, light(null, "Desk lamp", 8)).as(StepVerifier::create).verifyError(DeviceNotFoundException.class);
         sut.enable(7L).as(StepVerifier::create).verifyError(DeviceNotFoundException.class);
@@ -279,6 +277,7 @@ class DeviceRegistryServiceTest {
 
     @Test
     void should_remove_a_device() {
+        when(repository.findById(7L)).thenReturn(Mono.just(device(7L, "Lamp", RoomName.OFFICE)));
         when(repository.findAll(DeviceKind.BLINDS, null, null)).thenReturn(Flux.just(blinds(9L, List.of(31L))));
         when(repository.deleteById(7L)).thenReturn(Mono.just(1L));
 
@@ -337,6 +336,7 @@ class DeviceRegistryServiceTest {
     //the window would read as closed from then on without a word: the link goes first
     @Test
     void should_refuse_to_remove_an_opening_sensor_blinds_still_name() {
+        when(repository.findById(31L)).thenReturn(Mono.just(sensor(31L)));
         when(repository.findAll(DeviceKind.BLINDS, null, null))
             .thenReturn(Flux.just(blinds(9L, List.of(30L, 31L)), blinds(10L, List.of()), blinds(12L, List.of(31L))));
 

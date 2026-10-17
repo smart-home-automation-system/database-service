@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ServerWebInputException;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.Comparator;
@@ -118,7 +119,8 @@ public class DeviceRegistryService {
     //An opening sensor that blinds still name is not removed: their window would read as closed
     //from then on without a word - the link goes first, with a PUT of the blinds
     public Mono<Void> remove(final long id) {
-        return repository.findAll(DeviceKind.BLINDS, null, null)
+        return find(id)
+            .thenMany(Flux.defer(() -> repository.findAll(DeviceKind.BLINDS, null, null)))
             .filter(blinds -> blinds.getOpeningSensors() != null && blinds.getOpeningSensors().contains(id))
             .map(blinds -> blinds.getId() + " [" + blinds.getName() + "]")
             .collectList()

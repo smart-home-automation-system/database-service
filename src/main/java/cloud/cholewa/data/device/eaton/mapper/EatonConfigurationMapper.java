@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -33,6 +34,8 @@ public class EatonConfigurationMapper {
             .eatonGateway(configuration.getGateway())
             .eatonPoint(configuration.getPoint())
             .lightKind(lightKindOf(configuration.getType()))
+            //never null, like the column (V16): no Eaton configuration names a window sensor
+            .openingSensors(List.of())
             .build());
     }
 
