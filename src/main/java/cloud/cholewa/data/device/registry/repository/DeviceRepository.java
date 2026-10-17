@@ -12,6 +12,8 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.Collection;
+
 //The table of the devices. Not a derived-query interface: the three filters of the list are each
 //optional, which is eight derived methods or one query built from what was asked for - and
 //"(:kind IS NULL OR kind = :kind)" in a hand-written statement leaves PostgreSQL unable to tell
@@ -39,6 +41,11 @@ public class DeviceRepository {
 
     public Mono<DeviceEntity> findById(final long id) {
         return template.selectOne(Query.query(Criteria.where("id").is(id)), DeviceEntity.class);
+    }
+
+    //the devices of the ids, those that exist - in no particular order
+    public Flux<DeviceEntity> findAllById(final Collection<Long> ids) {
+        return template.select(Query.query(Criteria.where("id").in(ids)), DeviceEntity.class);
     }
 
     //the device behind a data point of a gateway of the AMX system - at most one (V13)

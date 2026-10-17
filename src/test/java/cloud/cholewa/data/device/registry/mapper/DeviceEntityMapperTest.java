@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,6 +40,7 @@ class DeviceEntityMapperTest {
             .build())
         .placement(BlindsPlacement.EXTERNAL)
         .positioning(true)
+        .openingSensors(List.of(31L, 30L))
         .build();
 
     private final DeviceEntityMapper mapper = new DeviceEntityMapper();
@@ -60,6 +62,7 @@ class DeviceEntityMapperTest {
             .shellyChannel(1)
             .placement(BlindsPlacement.EXTERNAL)
             .positioning(true)
+            .openingSensors(List.of(31L, 30L))
             .build());
         assertThat(entity.getCreatedAt()).isBetween(aMinuteAgo(), now());
     }
@@ -94,6 +97,7 @@ class DeviceEntityMapperTest {
                 .eatonGateway(EatonGatewayType.LIGHTS)
                 .eatonPoint(44)
                 .lightKind(LightKind.DIMMER)
+                .openingSensors(List.of())
                 .build());
         assertThat(mapper.toNewEntity(weather)).usingRecursiveComparison().ignoringFields("createdAt")
             .isEqualTo(DeviceEntity.builder()
@@ -103,6 +107,7 @@ class DeviceEntityMapperTest {
                 .vendor(SmartVendor.OTHER)
                 .enabled(true)
                 .bthomeAddress("7c:c6:b6:00:00:01")
+                .openingSensors(List.of())
                 .build());
     }
 
@@ -144,6 +149,7 @@ class DeviceEntityMapperTest {
             .enabled(false)
             .shellyAddress("192.0.2.18")
             .shellyGeneration(1)
+            .openingSensors(List.of())
             .build());
         assertThat(entity.getUpdatedAt()).isBetween(aMinuteAgo(), now());
     }
@@ -165,6 +171,7 @@ class DeviceEntityMapperTest {
             .lightKind(LightKind.RELAY)
             .placement(BlindsPlacement.INTERNAL)
             .positioning(false)
+            .openingSensors(List.of(31L))
             .build();
         final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED).build();
 
@@ -193,6 +200,7 @@ class DeviceEntityMapperTest {
             .lightKind(LightKind.RELAY)
             .placement(BlindsPlacement.INTERNAL)
             .positioning(false)
+            .openingSensors(List.of(31L))
             .build();
 
         final DeviceEntity off = mapper.withEnabled(existing, false);
@@ -202,6 +210,19 @@ class DeviceEntityMapperTest {
         assertThat(off.getEnabled()).isFalse();
         assertThat(off.getUpdatedAt()).isBetween(aMinuteAgo(), now());
         assertThat(mapper.withEnabled(off, true).getEnabled()).isTrue();
+    }
+
+    //the column is NOT NULL: a list sent as null is none, and the row never shares the payload's list
+    @Test
+    void should_store_opening_sensors_sent_as_null_as_none() {
+        final SmartDevice blinds = SmartDevice.builder().name("Office window").room(RoomName.OFFICE)
+            .kind(DeviceKind.BLINDS).vendor(SmartVendor.SHELLY).enabled(true)
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(1).build())
+            .openingSensors(null).build();
+
+        assertThat(mapper.toNewEntity(blinds).getOpeningSensors()).isEmpty();
+        assertThat(mapper.toReplacement(DeviceEntity.builder().id(7L).createdAt(REGISTERED).build(), blinds)
+            .getOpeningSensors()).isEmpty();
     }
 
     private static LocalDateTime now() {

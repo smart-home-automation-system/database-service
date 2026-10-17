@@ -199,6 +199,8 @@ class DeviceRegistryControllerTest {
         .vendor(SmartVendor.EATON)
         .eaton(EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(44).build())
         .lightKind(LightKind.DIMMER)
+        //a list the body leaves out is read as an empty one, as every array of the model starts
+        .openingSensors(List.of())
         .build();
 
     private static final String LIGHT_JSON = """
@@ -235,6 +237,7 @@ class DeviceRegistryControllerTest {
             .vendor(SmartVendor.EATON)
             .eaton(EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(44).build())
             .lightKind(LightKind.DIMMER)
+            .openingSensors(List.of())
             .build();
         final SmartDevice stored = SmartDevice.builder()
             .id(18L)
@@ -387,5 +390,54 @@ class DeviceRegistryControllerTest {
                 .expectBody()
                 .jsonPath("$.errors[0].code").isEqualTo("NOT_FOUND_DEVICE");
         }
+    }
+
+    //HAS-290: the opening sensors of blinds travel as a list of ids both ways, in the order sent
+    @Test
+    void should_read_and_answer_the_opening_sensors_of_blinds() {
+        final SmartDevice stored = cinemaWindows(9L);
+        when(deviceRegistryService.replace(eq(9L), any())).thenReturn(Mono.just(stored));
+
+        webTestClient.put()
+            .uri("/device/registry/9")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("""
+                {"name": "Cinema windows", "room": "cinema", "kind": "blinds", "enabled": true, "vendor": "eaton",
+                 "eaton": {"gateway": "blinds", "point": 20}, "openingSensors": [31, 30]}""")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.openingSensors[0]").isEqualTo(31)
+            .jsonPath("$.openingSensors[1]").isEqualTo(30);
+
+        verify(deviceRegistryService).replace(9L, cinemaWindows(null));
+    }
+
+    //an id below 1 is no device: the model refuses it before the service is asked
+    @Test
+    void should_refuse_an_opening_sensor_id_below_one() {
+        webTestClient.put()
+            .uri("/device/registry/9")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("""
+                {"name": "Cinema windows", "room": "cinema", "kind": "blinds", "enabled": true, "vendor": "eaton",
+                 "eaton": {"gateway": "blinds", "point": 20}, "openingSensors": [0]}""")
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        verifyNoInteractions(deviceRegistryService);
+    }
+
+    private static SmartDevice cinemaWindows(final Long id) {
+        return SmartDevice.builder()
+            .id(id)
+            .name("Cinema windows")
+            .room(RoomName.CINEMA)
+            .kind(DeviceKind.BLINDS)
+            .enabled(true)
+            .vendor(SmartVendor.EATON)
+            .eaton(EatonBinding.builder().gateway(EatonGatewayType.BLINDS).point(20).build())
+            .openingSensors(List.of(31L, 30L))
+            .build();
     }
 }

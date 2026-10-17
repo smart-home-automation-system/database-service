@@ -12,6 +12,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 //A row of the device registry - the one table of the devices of the house. The three bindings of
 //the SDK model (shelly, eaton, bthome) are columns of the one row here - exactly one of them is
@@ -45,4 +46,6 @@ public class DeviceEntity {
     LightKind lightKind;
     BlindsPlacement placement;
     Boolean positioning;
+    //the ids of the opening sensors on the window of blinds (V16) - an array column, never null
+    List<Long> openingSensors;
 }

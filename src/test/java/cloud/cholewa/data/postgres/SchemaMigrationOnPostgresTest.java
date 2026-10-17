@@ -264,6 +264,27 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsEntry("configurations", 1L);
     }
 
+    //V16 (HAS-290) over the registry as it is: every device - blinds included - comes out with no
+    //opening sensor, and a row the released version inserts afterwards, not naming the column, too
+    @Test
+    void should_give_every_device_no_opening_sensor_also_one_an_older_release_inserts() {
+        final String schema = "rehearsal_opening_sensors";
+        startOver(schema);
+        migrate(schema, "15");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Cinema windows', 'CINEMA', 'BLINDS', 'EATON', true, 'BLINDS', 20)""".formatted(schema));
+
+        migrate(schema, "latest");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Office windows', 'OFFICE', 'BLINDS', 'EATON', true, 'BLINDS', 21)""".formatted(schema));
+
+        assertThat(rows("SELECT cardinality(opening_sensors) AS sensors FROM %s.devices".formatted(schema)))
+            .extracting(device -> device.get("sensors"))
+            .containsExactly(0, 0);
+    }
+
     //the container outlives the test, and with it the schema of an earlier run in the same JVM
     private void startOver(final String schema) {
         execute("DROP SCHEMA IF EXISTS %s CASCADE".formatted(schema));

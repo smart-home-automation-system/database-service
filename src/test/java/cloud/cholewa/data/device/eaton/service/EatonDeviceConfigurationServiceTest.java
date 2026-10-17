@@ -27,6 +27,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static cloud.cholewa.home.model.EatonGatewayType.BLINDS;
 import static cloud.cholewa.home.model.EatonGatewayType.LIGHTS;
@@ -86,6 +87,7 @@ class EatonDeviceConfigurationServiceTest {
                 .enabled(true)
                 .eatonGateway(BLINDS)
                 .eatonPoint(1)
+                .openingSensors(List.of())
                 .build());
     }
 
