@@ -14,6 +14,7 @@ import cloud.cholewa.home.model.SmartVendor;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,6 +38,7 @@ class SmartDeviceMapperTest {
             .shellyChannel(0)
             .placement(BlindsPlacement.EXTERNAL)
             .positioning(true)
+            .openingSensors(List.of(31L, 30L))
             .build();
 
         assertThat(mapper.toDevice(entity)).isEqualTo(SmartDevice.builder()
@@ -54,7 +56,18 @@ class SmartDeviceMapperTest {
                 .build())
             .placement(BlindsPlacement.EXTERNAL)
             .positioning(true)
+            .openingSensors(List.of(31L, 30L))
             .build());
+    }
+
+    //a window without a sensor: the list is left out, as the builder leaves it and the JSON omits it
+    @Test
+    void should_leave_out_the_opening_sensors_of_blinds_that_have_none() {
+        final DeviceEntity entity = row().id(17L).name("Office window").room(RoomName.OFFICE).kind(DeviceKind.BLINDS)
+            .vendor(SmartVendor.SHELLY).enabled(true).shellyAddress("192.0.2.17").shellyGeneration(1)
+            .openingSensors(List.of()).build();
+
+        assertThat(mapper.toDevice(entity).getOpeningSensors()).isNull();
     }
 
     @Test

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
 //The SDK model as a row of the registry - the other direction of SmartDeviceMapper, and written by
 //hand for the same reason: the model is nested, the row is flat. Every write stores the whole row,
@@ -64,7 +65,13 @@ public class DeviceEntityMapper {
             .bthomeAddress(bthome == null ? null : bthome.getAddress())
             .lightKind(device.getLightKind())
             .placement(device.getPlacement())
-            .positioning(device.getPositioning());
+            .positioning(device.getPositioning())
+            .openingSensors(openingSensorsOf(device));
+    }
+
+    //the column is never null: a list the payload left out, or sent as null, is none
+    private static List<Long> openingSensorsOf(final SmartDevice device) {
+        return device.getOpeningSensors() == null ? List.of() : List.copyOf(device.getOpeningSensors());
     }
 
     private static LocalDateTime now() {

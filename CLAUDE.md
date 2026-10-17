@@ -335,6 +335,26 @@ writes of both registries and of the calendar are open to whoever reaches the in
     device changes the room `amx-service` reads for its point, a `DELETE` leaves the point
     unconfigured - for a room sensor, the end of that room's readings in `heating-service`.
     Nothing warns; the administration page (HAS-231) should.
+- **The opening sensors of blinds** (HAS-290, `V16`, SDK 1.11.0): `opening_sensors BIGINT[]` of
+  the ids of the sensors on the window of one blinds - per blind, never per room; `blinds-service`
+  reads a window without a sensor as closed.
+  - **An array column, the rooms of a member once more**, not a join table: it is read and
+    replaced with the whole device and keeps the order. What a foreign key would give is code:
+    `DeviceRules` keeps the list to blinds, without a `null` or a repeat (`List.of()` throws on
+    `contains(null)` - hence the stream); the service asks for the ids
+    (`DeviceRepository.findAllById`) and names every one that is no registered opening sensor
+    (`INVALID_DEVICE`); `remove` refuses a sensor that blinds still name (`DEVICE_CONFLICT`,
+    the blinds in `details`), found by reading the blinds - a few dozen rows, one writer.
+    "Re-kinding" a sensor needs no rule of its own: no kind changes on a `PUT`.
+  - **`NOT NULL DEFAULT '{}'` is for the rollout**: the released version's entity does not
+    name the column, so its inserts get the default and its `PUT` leaves the link alone
+    (rehearsed with 0.15.1 on a throwaway PostgreSQL). It also deletes a sensor in use
+    without asking - only while the two run side by side.
+  - **`SmartDeviceMapper` leaves an empty list unset** (the builder leaves it `null`): the JSON
+    omits it either way, and the comparisons of whole models stay as they were.
+    `DeviceEntityMapper` writes `List.of()` for a list sent as `null`.
+  - **Read it back as text** in the tests on PostgreSQL (`array_to_string`): the driver answers
+    a `Long[]`, equal to nothing but itself.
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 

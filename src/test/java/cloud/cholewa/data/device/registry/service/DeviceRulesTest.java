@@ -16,6 +16,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.Arrays;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -178,6 +181,51 @@ class DeviceRulesTest {
             DeviceRules.check(device(DeviceKind.BLINDS, SmartVendor.SHELLY, "shelly")
                 .placement(BlindsPlacement.INTERNAL).positioning(true).build());
         }).doesNotThrowAnyException();
+    }
+
+    //the window of blinds may have two sensors (two sashes) or none; that each id is an opening
+    //sensor of the registry is the service's to ask
+    @Test
+    void should_take_blinds_with_the_opening_sensors_of_their_window() {
+        assertThatCode(() -> {
+            DeviceRules.check(device(DeviceKind.BLINDS, SmartVendor.EATON, "eaton").openingSensors(List.of(31L, 30L)).build());
+            DeviceRules.check(device(DeviceKind.BLINDS, SmartVendor.EATON, "eaton").openingSensors(List.of()).build());
+            DeviceRules.check(device(DeviceKind.BLINDS, SmartVendor.EATON, "eaton").openingSensors(null).build());
+            //an empty list is no list, whatever the kind - it is what every payload starts with
+            DeviceRules.check(device(DeviceKind.LIGHT, SmartVendor.EATON, "eaton").openingSensors(List.of()).build());
+        }).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = "BLINDS", mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_opening_sensors_on_anything_but_blinds(final DeviceKind kind) {
+        final String binding = kind == DeviceKind.WEATHER_STATION ? "bthome" : "shelly";
+        final SmartDevice device = device(kind, SmartVendor.SHELLY, binding).openingSensors(List.of(31L)).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessageContaining("openingSensors");
+    }
+
+    //the model lets a null item through: @Min says nothing of a null
+    @Test
+    void should_refuse_a_null_among_the_opening_sensors() {
+        final SmartDevice blinds = device(DeviceKind.BLINDS, SmartVendor.EATON, "eaton")
+            .openingSensors(Arrays.asList(31L, null)).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(blinds))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("openingSensors hold the ids of devices, and one of them is null");
+    }
+
+    @Test
+    void should_refuse_an_opening_sensor_named_twice() {
+        final SmartDevice blinds = device(DeviceKind.BLINDS, SmartVendor.EATON, "eaton")
+            .openingSensors(List.of(31L, 30L, 31L)).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(blinds))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("openingSensors name a sensor more than once: [31, 30, 31]");
     }
 
     private static SmartDevice.SmartDeviceBuilder<?, ?> device(

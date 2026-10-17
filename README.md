@@ -102,7 +102,7 @@ point.
 | `POST` | `/home/device/registry` | Registers a device; the body is a `SmartDevice`. `201 Created` with the device and the `id` it got - an `id` in the body is ignored. `400` for a body the model refuses (a required field, a bound - no code), `400` with the code `INVALID_DEVICE` for a device the registry refuses (below), `409` with the code `DEVICE_CONFLICT` when its binding is taken. |
 | `PUT` | `/home/device/registry/{id}` | Replaces the device by the body, **whole**: what the body leaves out is gone, and `enabled` is taken from it like everything else. The `id`, the `kind` and the time of registration stay - a body of another kind is a `400` `INVALID_DEVICE`. `200 OK` with the device; `404` `NOT_FOUND_DEVICE`; the refusals of `POST`. |
 | `POST` | `/home/device/registry/{id}/enable`, `.../{id}/disable` | Switches one device on or off for the services and leaves the rest of it. `200 OK` with the device; `404` `NOT_FOUND_DEVICE`. |
-| `DELETE` | `/home/device/registry/{id}` | Removes the device for good. `204 No Content`; `404` `NOT_FOUND_DEVICE`. |
+| `DELETE` | `/home/device/registry/{id}` | Removes the device for good. `204 No Content`; `404` `NOT_FOUND_DEVICE`; `409` `DEVICE_CONFLICT` for an opening sensor that blinds still name in `openingSensors`. |
 
 ```json
 [
@@ -111,7 +111,7 @@ point.
   {"id": 1, "name": "Office window", "room": "office", "kind": "blinds", "enabled": true,
    "vendor": "shelly",
    "shelly": {"address": "192.0.2.17", "generation": 3, "deviceId": "shelly2pmg3-a1b2c3d4e5f6", "channel": 0},
-   "placement": "external", "positioning": true}
+   "placement": "external", "positioning": true, "openingSensors": [7]}
 ]
 ```
 
@@ -121,6 +121,10 @@ What a reader can rely on:
   not in the JSON at all (not `null`, not `{}`). The schema guarantees the one.
 - **The fields of one kind only** (`lightKind`, `placement`, `positioning`) are left out when
   the row has none; a missing `positioning` is "not known", never `false`.
+- **`openingSensors` of blinds** (since 0.16.0, SDK 1.11.0, HAS-290) are the ids of the opening
+  sensors on their window - in the order sent, two for a window with two sashes. Left out when
+  there is none: a window without a sensor, which `blinds-service` takes as closed. Each id is a
+  registered opening sensor; a switched-off one is still listed.
 - **A relay with several outputs is a device per channel**, each with its own `id`; they share
   `shelly.address` and `shelly.deviceId` and differ by `shelly.channel`.
 - **`enabled: false` devices are in the answer** unless `enabled=true` is asked for - a service
@@ -152,7 +156,10 @@ What a writer has to know:
     over MQTT. Without it the device could be driven and never heard: the services find the
     device of an event by that id. A Gen1 device has none to give;
   - `lightKind` only on a `light`; `placement` and `positioning` only on `blinds`. None of the
-    three is required.
+    three is required;
+  - `openingSensors` only on `blinds`, each id once, no `null`, and each one a registered device
+    of the kind `opening sensor` - an id nobody has, or a device of another kind, is named in
+    `details`. An id below 1 fails the model (`400` without a code).
 - **A binding is one device** - `409` with the code `DEVICE_CONFLICT`, and `details` names
   what is taken: a channel of a Shelly by its address, a channel of a Shelly by its MQTT id,
   a point of an Eaton gateway, a Bluetooth address. A Shelly without a channel is one device
@@ -160,6 +167,9 @@ What a writer has to know:
 - **`PUT` is the whole device, not a patch.** Send everything the device should be; a client
   that edits a device reads it, changes it and sends it back. There is no partial update: the
   model has five required fields, and nothing in it tells "left out" from "cleared".
+- **`PUT` without `openingSensors` removes the link** - the list is part of the whole device.
+  An opening sensor that blinds name cannot be removed (`409` `DEVICE_CONFLICT`, `details`
+  names the blinds): send the blinds without it first.
 - **The kind cannot be changed**: the services keep what they know of a device under its id.
   A device of another kind is removed and registered again. The room, the name, the binding
   and with it the vendor may all change under one id.
@@ -298,8 +308,8 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
-| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind |
-| `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry |
+| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`) |
+| `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry; or the device is an opening sensor that blinds still name, and cannot be removed |
 | `NOT_FOUND_DAY_OFF` | 404 | the household added no day off on that date - a holiday and a weekend are days off without being stored |
 
 The codes are API: a caller may branch on them, so they do not change without their callers.
@@ -334,7 +344,7 @@ does not know: the value fails while the body is read, and the answer is a `400`
   see the API table.
 - **Device registry** (`V13`): `devices` - `name`, `room`, `kind`, `vendor`, `enabled`, the
   three bindings as columns (`shelly_address`, `shelly_generation`, `shelly_device_id`,
-  `shelly_channel`; `eaton_gateway`, `eaton_point`; `bthome_address`) and `light_kind`, `placement`, `positioning`. Checks: exactly one binding
+  `shelly_channel`; `eaton_gateway`, `eaton_point`; `bthome_address`) and `light_kind`, `placement`, `positioning`, and since `V16` `opening_sensors` (`BIGINT[]`, never `NULL`, `{}` by default; only blinds hold ids - `devices_opening_sensors_of_blinds` - and none is `NULL` - `devices_opening_sensors_no_null`). Checks: exactly one binding
   is filled, a binding is whole or absent, the vendor `EATON` goes with the Eaton binding and
   with no other, `light_kind` only on a light, `placement` and `positioning` only on blinds,
   and the bounds of the SDK models (address, generation 1..4, channel 0..3, point 1..99, the

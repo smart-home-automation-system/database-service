@@ -247,6 +247,7 @@ class DeviceRegistryServiceTest {
     @Test
     void should_report_a_device_that_is_not_registered_to_every_write() {
         when(repository.findById(7L)).thenReturn(Mono.empty());
+        when(repository.findAll(DeviceKind.BLINDS, null, null)).thenReturn(Flux.empty());
         when(repository.deleteById(7L)).thenReturn(Mono.just(0L));
 
         sut.replace(7L, light(null, "Desk lamp", 8)).as(StepVerifier::create).verifyError(DeviceNotFoundException.class);
@@ -278,9 +279,104 @@ class DeviceRegistryServiceTest {
 
     @Test
     void should_remove_a_device() {
+        when(repository.findAll(DeviceKind.BLINDS, null, null)).thenReturn(Flux.just(blinds(9L, List.of(31L))));
         when(repository.deleteById(7L)).thenReturn(Mono.just(1L));
 
         sut.remove(7L).as(StepVerifier::create).verifyComplete();
+    }
+
+    //--- the opening sensors of blinds (HAS-290)
+
+    @Test
+    void should_register_blinds_with_the_opening_sensors_of_their_window() {
+        when(repository.findAllById(List.of(31L, 30L))).thenReturn(Flux.just(sensor(30L), sensor(31L)));
+        when(repository.insert(any())).thenAnswer(stored ->
+            Mono.just(stored.<DeviceEntity>getArgument(0).toBuilder().id(9L).build()));
+
+        sut.add(blindsDevice(List.of(31L, 30L))).as(StepVerifier::create)
+            .assertNext(device -> assertThat(device.getOpeningSensors()).containsExactly(31L, 30L))
+            .verifyComplete();
+    }
+
+    //an id nobody registered and a device of another kind are both no sensor of the window
+    @Test
+    void should_refuse_opening_sensors_that_are_no_registered_opening_sensor() {
+        when(repository.findAllById(List.of(31L, 7L, 40L))).thenReturn(Flux.just(sensor(31L), device(7L, "Lamp", RoomName.OFFICE)));
+
+        sut.add(blindsDevice(List.of(31L, 7L, 40L))).as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error)
+                .isInstanceOf(InvalidDeviceException.class)
+                .hasMessage("openingSensors name devices that are no registered opening sensor: [7, 40]"));
+
+        verify(repository, never()).insert(any());
+    }
+
+    @Test
+    void should_check_the_opening_sensors_of_replaced_blinds_too() {
+        when(repository.findById(9L)).thenReturn(Mono.just(blinds(9L, List.of())));
+        when(repository.findAllById(List.of(40L))).thenReturn(Flux.empty());
+
+        sut.replace(9L, blindsDevice(List.of(40L))).as(StepVerifier::create)
+            .verifyError(InvalidDeviceException.class);
+
+        verify(repository, never()).update(any());
+    }
+
+    //blinds without a sensor ask nothing about sensors
+    @Test
+    void should_not_look_for_sensors_of_blinds_without_any() {
+        when(repository.insert(any())).thenAnswer(stored -> Mono.just(stored.getArgument(0)));
+
+        sut.add(blindsDevice(List.of())).as(StepVerifier::create)
+            .assertNext(device -> assertThat(device.getOpeningSensors()).isNull())
+            .verifyComplete();
+
+        verify(repository, never()).findAllById(any());
+    }
+
+    //the window would read as closed from then on without a word: the link goes first
+    @Test
+    void should_refuse_to_remove_an_opening_sensor_blinds_still_name() {
+        when(repository.findAll(DeviceKind.BLINDS, null, null))
+            .thenReturn(Flux.just(blinds(9L, List.of(30L, 31L)), blinds(10L, List.of()), blinds(12L, List.of(31L))));
+
+        sut.remove(31L).as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error)
+                .isInstanceOf(DeviceConflictException.class)
+                .hasMessage("The device 31 is the opening sensor of the blinds 9 [Window 9], 12 [Window 12]"
+                    + " - remove it from their openingSensors first"));
+
+        verify(repository, never()).deleteById(31L);
+    }
+
+    private static SmartDevice blindsDevice(final List<Long> sensors) {
+        return SmartDevice.builder()
+            .name("Cinema windows")
+            .room(RoomName.CINEMA)
+            .kind(DeviceKind.BLINDS)
+            .vendor(SmartVendor.EATON)
+            .enabled(true)
+            .eaton(EatonBinding.builder().gateway(EatonGatewayType.BLINDS).point(20).build())
+            .openingSensors(sensors)
+            .build();
+    }
+
+    private static DeviceEntity blinds(final long id, final List<Long> sensors) {
+        return device(id, "Window " + id, RoomName.CINEMA).toBuilder()
+            .kind(DeviceKind.BLINDS)
+            .eatonGateway(EatonGatewayType.BLINDS)
+            .openingSensors(sensors)
+            .build();
+    }
+
+    private static DeviceEntity sensor(final long id) {
+        return device(id, "Window sensor " + id, RoomName.CINEMA).toBuilder()
+            .kind(DeviceKind.OPENING_SENSOR)
+            .vendor(SmartVendor.SHELLY)
+            .eatonGateway(null)
+            .eatonPoint(null)
+            .bthomeAddress("7c:c6:b6:00:00:" + id)
+            .build();
     }
 
     private static SmartDevice light(final Long id, final String name, final int point) {

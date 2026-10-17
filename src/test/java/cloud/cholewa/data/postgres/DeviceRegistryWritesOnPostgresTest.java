@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.test.StepVerifier;
 
 import java.util.HashMap;
 import java.util.List;
@@ -383,6 +384,64 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             .expectBody().jsonPath("$.errors[0].code").isEqualTo("NOT_FOUND_DEVICE_CONFIGURATION");
     }
 
+    //HAS-290, V16: the sensors of the window of blinds as a BIGINT[] of their ids, in the order
+    //sent; each one has to be a registered opening sensor, and one that blinds still name stays
+    @Test
+    void should_link_blinds_to_the_opening_sensors_of_their_window_and_keep_a_sensor_in_use() {
+        final long left = added(sensor("Cinema window left", "7c:c6:b6:00:00:11"));
+        final long right = added(sensor("Cinema window right", "7c:c6:b6:00:00:12"));
+        final long light = added(EATON_LIGHT);
+        final long blinds = added(SHELLY_BLINDS.replace("\"positioning\": true}",
+            "\"positioning\": true, \"openingSensors\": [" + right + ", " + left + "]}"));
+
+        assertThat(stored(blinds)).containsEntry("opening_sensors", right + "," + left);
+        assertThat(stored(light)).containsEntry("opening_sensors", "");
+        webTestClient.get().uri("/device/registry/{id}", blinds).exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.openingSensors.length()").isEqualTo(2)
+            .jsonPath("$.openingSensors[0]").isEqualTo(right);
+        //blinds without a sensor answer without the list
+        webTestClient.get().uri("/device/registry/{id}", light).exchange()
+            .expectBody().jsonPath("$.openingSensors").doesNotExist();
+
+        invalid(SHELLY_BLINDS.replace("192.0.2.17", "192.0.2.18").replace("a1b2c3d4e5f6", "a1b2c3d4e5f7")
+                .replace("\"positioning\": true}", "\"positioning\": true, \"openingSensors\": [" + light + ", 999999]}"),
+            "openingSensors name devices that are no registered opening sensor: [" + light + ", 999999]");
+
+        webTestClient.delete().uri("/device/registry/{id}", left).exchange()
+            .expectStatus().isEqualTo(409)
+            .expectBody()
+            .jsonPath("$.errors[0].code").isEqualTo("DEVICE_CONFLICT")
+            .jsonPath("$.errors[0].details").isEqualTo("The device " + left + " is the opening sensor of the blinds "
+                + blinds + " [Office window] - remove it from their openingSensors first");
+
+        //a replacement without the list removes the link, and the sensor may go
+        replaced(blinds, SHELLY_BLINDS).expectStatus().isOk();
+        assertThat(stored(blinds)).containsEntry("opening_sensors", "");
+        webTestClient.delete().uri("/device/registry/{id}", left).exchange().expectStatus().isNoContent();
+    }
+
+    //what gets past the API is still kept to blinds and free of a NULL by the checks of V16
+    @Test
+    void should_keep_opening_sensors_to_blinds_in_the_schema_too() {
+        final long light = added(EATON_LIGHT);
+
+        databaseClient.sql("UPDATE devices SET opening_sensors = '{1}' WHERE id = " + light).then()
+            .as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error).hasMessageContaining("devices_opening_sensors_of_blinds"));
+        final long blinds = added(SHELLY_BLINDS);
+        databaseClient.sql("UPDATE devices SET opening_sensors = '{1,NULL}' WHERE id = " + blinds).then()
+            .as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error).hasMessageContaining("devices_opening_sensors_no_null"));
+    }
+
+    private static String sensor(final String name, final String address) {
+        return """
+            {"name": "%s", "room": "cinema", "kind": "opening sensor", "vendor": "shelly", "enabled": true,
+             "bthome": {"address": "%s"}}""".formatted(name, address);
+    }
+
     //the id the registry answered with
     private long added(final String body) {
         final Map<?, ?> device = webTestClient.post()
@@ -433,8 +492,12 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             .jsonPath("$.errors[0].details").isEqualTo(details);
     }
 
+    //the array written out: a Long[] read back is equal to nothing but itself
     private Map<String, Object> stored(final long id) {
-        return row("SELECT * FROM devices WHERE id = " + id);
+        final Map<String, Object> device = new HashMap<>(
+            row("SELECT *, array_to_string(opening_sensors, ',') AS sensors FROM devices WHERE id = " + id));
+        device.put("opening_sensors", device.remove("sensors"));
+        return device;
     }
 
     private long count() {

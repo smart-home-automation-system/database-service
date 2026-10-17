@@ -74,6 +74,7 @@ public class DeviceRegistryService {
                 DeviceRules.check(device);
                 return entityMapper.toNewEntity(device);
             })
+            .flatMap(entity -> openingSensorsRegistered(entity).thenReturn(entity))
             .flatMap(entity -> repository.insert(entity)
                 .onErrorMap(DuplicateKeyException.class, e -> bindingTaken(e, entity)))
             .doOnNext(stored -> log.info("Registered device: {} [{}]", stored.getId(), stored.getName()))
@@ -97,6 +98,7 @@ public class DeviceRegistryService {
                 }
                 return entityMapper.toReplacement(existing, device);
             })
+            .flatMap(entity -> openingSensorsRegistered(entity).thenReturn(entity))
             .flatMap(entity -> repository.update(entity)
                 .onErrorMap(DuplicateKeyException.class, e -> bindingTaken(e, entity)))
             .doOnNext(stored -> log.info("Replaced device: {} [{}]", stored.getId(), stored.getName()))
@@ -113,8 +115,19 @@ public class DeviceRegistryService {
 
     //Gone for good, and with it whatever the services kept under its id. For an Eaton device
     //that is also its configuration: amx-service gets a 404 for the data point from here on
+    //An opening sensor that blinds still name is not removed: their window would read as closed
+    //from then on without a word - the link goes first, with a PUT of the blinds
     public Mono<Void> remove(final long id) {
-        return repository.deleteById(id)
+        return repository.findAll(DeviceKind.BLINDS, null, null)
+            .filter(blinds -> blinds.getOpeningSensors() != null && blinds.getOpeningSensors().contains(id))
+            .map(blinds -> blinds.getId() + " [" + blinds.getName() + "]")
+            .collectList()
+            .flatMap(users -> users.isEmpty()
+                ? Mono.empty()
+                : Mono.error(new DeviceConflictException(
+                    "The device " + id + " is the opening sensor of the blinds " + String.join(", ", users)
+                        + " - remove it from their openingSensors first")))
+            .then(Mono.defer(() -> repository.deleteById(id)))
             .filter(removed -> removed > 0)
             .switchIfEmpty(Mono.error(() -> DeviceNotFoundException.forId(id)))
             .doOnNext(removed -> log.info("Removed device: {}", id))
@@ -127,6 +140,27 @@ public class DeviceRegistryService {
             .flatMap(repository::update)
             .doOnNext(stored -> log.info("Device: {} [{}] enabled: {}", stored.getId(), stored.getName(), enabled))
             .map(mapper::toDevice);
+    }
+
+    //Each id of openingSensors has to be a registered device of the kind opening sensor - the
+    //rules have already kept the list to blinds, without a null or a repeat. A switched-off
+    //sensor is still a sensor of that window
+    private Mono<Void> openingSensorsRegistered(final DeviceEntity blinds) {
+        final List<Long> ids = blinds.getOpeningSensors();
+        if (ids.isEmpty()) {
+            return Mono.empty();
+        }
+        return repository.findAllById(ids)
+            .filter(device -> device.getKind() == DeviceKind.OPENING_SENSOR)
+            .map(DeviceEntity::getId)
+            .collectList()
+            .flatMap(sensors -> {
+                final List<Long> missing = ids.stream().filter(sensorId -> !sensors.contains(sensorId)).toList();
+                return missing.isEmpty()
+                    ? Mono.empty()
+                    : Mono.error(new InvalidDeviceException(
+                        "openingSensors name devices that are no registered opening sensor: " + missing));
+            });
     }
 
     private Mono<DeviceEntity> find(final long id) {

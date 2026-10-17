@@ -9,8 +9,10 @@ import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -70,6 +72,29 @@ final class DeviceRules {
         if ((device.getPlacement() != null || device.getPositioning() != null) && kind != DeviceKind.BLINDS) {
             throw new InvalidDeviceException(
                 "placement and positioning describe blinds, not a device of the kind [" + kind.getValue() + "]");
+        }
+
+        checkOpeningSensors(device);
+    }
+
+    //The sensors on the window of blinds (HAS-290): blinds only, each id once and none missing -
+    //the model lets a null item through (@Min says nothing of a null). That each id is an opening
+    //sensor of the registry needs the database, and is the service's to ask
+    private static void checkOpeningSensors(final SmartDevice device) {
+        final List<Long> sensors = device.getOpeningSensors();
+        if (sensors == null || sensors.isEmpty()) {
+            return;
+        }
+        if (device.getKind() != DeviceKind.BLINDS) {
+            throw new InvalidDeviceException(
+                "openingSensors describe the window of blinds, not a device of the kind [" + device.getKind().getValue() + "]");
+        }
+        //List.of() answers contains(null) with an exception, not with false
+        if (sensors.stream().anyMatch(Objects::isNull)) {
+            throw new InvalidDeviceException("openingSensors hold the ids of devices, and one of them is null");
+        }
+        if (new HashSet<>(sensors).size() != sensors.size()) {
+            throw new InvalidDeviceException("openingSensors name a sensor more than once: " + sensors);
         }
     }
 

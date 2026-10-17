@@ -7,6 +7,9 @@ import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
+
 //A row of the registry as the SDK model. Written by hand, unlike the other mappers of the service:
 //the row is flat and the model has a binding object per way a device is reached, of which a device
 //has one. MapStruct fills a nested target whenever its source object is there - every device would
@@ -29,7 +32,15 @@ public class SmartDeviceMapper {
             .lightKind(entity.getLightKind())
             .placement(entity.getPlacement())
             .positioning(entity.getPositioning())
+            .openingSensors(openingSensors(entity))
             .build();
+    }
+
+    //none is left out, as the builder leaves every list it is not given - the JSON omits an empty
+    //list anyway, and a reader takes a missing one as none
+    private static List<Long> openingSensors(final DeviceEntity entity) {
+        final List<Long> sensors = entity.getOpeningSensors();
+        return sensors == null || sensors.isEmpty() ? null : new ArrayList<>(sensors);
     }
 
     //each binding is told by the column it cannot do without - the ones the schema counts (V13)
