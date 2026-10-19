@@ -26,6 +26,8 @@ final class DeviceRules {
 
     private static final int MIN_NAME_CHARACTERS = 3;
     private static final int FIRST_GENERATION_ON_MQTT = 2;
+    private static final int LAST_OUTPUT = 3;
+    private static final int FIRST_ZONE = 200;
 
     static void check(final SmartDevice device) {
         final Binding binding = bindingOf(device);
@@ -59,6 +61,8 @@ final class DeviceRules {
                     + " needs its deviceId - the id it reports under over MQTT");
         }
 
+        checkChannel(device, binding);
+
         //The model counts the units of a string, the schema its characters (devices_name_length):
         //a name of one letter and one emoji is three to the first and two to the second
         if (device.getName().codePointCount(0, device.getName().length()) < MIN_NAME_CHARACTERS) {
@@ -75,6 +79,25 @@ final class DeviceRules {
         }
 
         checkOpeningSensors(device);
+    }
+
+    //The channel of a Shelly (HAS-260): 0 to 3 is an output, of any kind; 200 to 299 a dynamic
+    //component - the zone of a presence sensor (presencezone:200), and nothing else has one. The
+    //model takes 0 to 299, the schema repeats this rule (V17)
+    private static void checkChannel(final SmartDevice device, final Binding binding) {
+        final Integer channel = binding == Binding.SHELLY ? device.getShelly().getChannel() : null;
+        if (channel == null || channel <= LAST_OUTPUT) {
+            return;
+        }
+        if (channel < FIRST_ZONE) {
+            throw new InvalidDeviceException(
+                "The channel of a Shelly is an output (0 to 3) or the zone of a presence sensor (200 to 299), not " + channel);
+        }
+        if (device.getKind() != DeviceKind.PRESENCE_SENSOR) {
+            throw new InvalidDeviceException(
+                "The channel " + channel + " is a zone, which only a device of the kind [presence sensor] has, not one of the kind ["
+                    + device.getKind().getValue() + "]");
+        }
     }
 
     //The sensors on the window of blinds (HAS-290): blinds only, each id once and none missing -

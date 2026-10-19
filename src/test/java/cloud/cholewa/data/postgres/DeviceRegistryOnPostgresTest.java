@@ -206,6 +206,10 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
         refused(shelly("'192.0.2.17'", "5", "NULL", "NULL"), "devices_shelly_generation_range");
         refused(shelly("'192.0.2.17'", "2", "'shelly.plus2pm'", "NULL"), "devices_shelly_device_id_format");
         refused(shelly("'192.0.2.17'", "2", "NULL", "4"), "devices_shelly_channel_range");
+        refused(shelly("'192.0.2.17'", "2", "NULL", "199"), "devices_shelly_channel_range");
+        refused(shelly("'192.0.2.17'", "2", "NULL", "300"), "devices_shelly_channel_range");
+        //a zone is a channel of a presence sensor alone (V17) - shelly() inserts a light
+        refused(shelly("'192.0.2.17'", "2", "NULL", "200"), "devices_shelly_channel_range");
 
         refused("""
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
@@ -252,6 +256,24 @@ class DeviceRegistryOnPostgresTest extends OnPostgres {
                                  positioning)
             VALUES (now(), 'A light at half', 'OFFICE', 'LIGHT', 'EATON', TRUE, 'LIGHTS', 7, FALSE)""",
             "devices_placement_of_blinds");
+    }
+
+    //The zone of a Presence Gen4 as the channel of a presence sensor (HAS-260, V17); the same Presence
+    //may also be a gateway without a channel, which the unique indexes count apart
+    @Test
+    void should_take_a_zone_as_the_channel_of_a_presence_sensor_next_to_its_gateway() {
+        execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
+                                 shelly_device_id)
+            VALUES (now(), 'Presence', 'LIVIA', 'BTHOME_GATEWAY', 'SHELLY', TRUE, '192.0.2.17', 4,
+                    'shellypresence-a1b2c3d4e5f6')""");
+        execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
+                                 shelly_device_id, shelly_channel)
+            VALUES (now(), 'Presence', 'LIVIA', 'PRESENCE_SENSOR', 'SHELLY', TRUE, '192.0.2.17', 4,
+                    'shellypresence-a1b2c3d4e5f6', 200)""");
+
+        assertThat(row("SELECT count(*) AS devices FROM devices")).containsEntry("devices", 2L);
     }
 
     //a relay with several outputs is a device per channel - the address alone is not unique

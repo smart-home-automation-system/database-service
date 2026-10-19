@@ -160,6 +160,58 @@ class DeviceRulesTest {
             .hasMessage("A Shelly of generation " + generation + " needs its deviceId - the id it reports under over MQTT");
     }
 
+    //the zone of a Presence Gen4 is its channel (HAS-260): presencezone:200 is the main zone
+    @ParameterizedTest
+    @CsvSource({"200", "299"})
+    void should_take_a_zone_as_the_channel_of_a_presence_sensor(final int channel) {
+        final SmartDevice device = device(DeviceKind.PRESENCE_SENSOR, SmartVendor.SHELLY, "")
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(4).deviceId("shellypresence-a1b2c3d4e5f6")
+                .channel(channel).build())
+            .build();
+
+        assertThatCode(() -> DeviceRules.check(device)).doesNotThrowAnyException();
+    }
+
+    //an output is a channel of any kind, the presence sensor included
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = {"LIGHT", "PRESENCE_SENSOR"})
+    void should_take_an_output_as_the_channel_of_any_kind(final DeviceKind kind) {
+        final SmartDevice device = device(kind, SmartVendor.SHELLY, "")
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(2).deviceId("shellypro4pm-a1b2c3d4e5f6")
+                .channel(3).build())
+            .build();
+
+        assertThatCode(() -> DeviceRules.check(device)).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"4", "199"})
+    void should_refuse_a_channel_that_is_neither_an_output_nor_a_zone(final int channel) {
+        final SmartDevice device = device(DeviceKind.PRESENCE_SENSOR, SmartVendor.SHELLY, "")
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(4).deviceId("shellypresence-a1b2c3d4e5f6")
+                .channel(channel).build())
+            .build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("The channel of a Shelly is an output (0 to 3) or the zone of a presence sensor (200 to 299), not "
+                + channel);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = {"LIGHT", "MOTION_SENSOR", "BTHOME_GATEWAY"})
+    void should_refuse_a_zone_as_the_channel_of_another_kind(final DeviceKind kind) {
+        final SmartDevice device = device(kind, SmartVendor.SHELLY, "")
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(4).deviceId("shellypresence-a1b2c3d4e5f6")
+                .channel(200).build())
+            .build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("The channel 200 is a zone, which only a device of the kind [presence sensor] has, not one of the kind ["
+                + kind.getValue() + "]");
+    }
+
     //a Gen1 device does not report over MQTT and has no such id to give
     @Test
     void should_take_a_shelly_of_the_first_generation_without_an_id() {
