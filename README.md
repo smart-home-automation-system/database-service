@@ -126,7 +126,11 @@ What a reader can rely on:
   there is none: a window without a sensor, which `blinds-service` takes as closed. Each id is a
   registered opening sensor; a switched-off one is still listed.
 - **A relay with several outputs is a device per channel**, each with its own `id`; they share
-  `shelly.address` and `shelly.deviceId` and differ by `shelly.channel`.
+  `shelly.address` and `shelly.deviceId` and differ by `shelly.channel` (0 to 3, an output). Since
+  0.17.0 (SDK 1.12.0, HAS-260) a `presence sensor` may have a zone as its channel instead - 200 to
+  299, as in `presencezone:200` of a Shelly Presence Gen4; any other kind with a zone, or a channel
+  of 4 to 199, is `INVALID_DEVICE`. The same Presence may be a `bthome gateway` without a channel
+  next to it.
 - **`enabled: false` devices are in the answer** unless `enabled=true` is asked for - a service
   that must not use a switched-off device filters.
 - **A Bluetooth sensor names no gateway**: `bthome` is its address alone. Any device of the
@@ -347,7 +351,8 @@ does not know: the value fails while the body is read, and the answer is a `400`
   `shelly_channel`; `eaton_gateway`, `eaton_point`; `bthome_address`) and `light_kind`, `placement`, `positioning`, and since `V16` `opening_sensors` (`BIGINT[]`, never `NULL`, `{}` by default; only blinds hold ids - `devices_opening_sensors_of_blinds` - and none is `NULL` - `devices_opening_sensors_no_null`). Checks: exactly one binding
   is filled, a binding is whole or absent, the vendor `EATON` goes with the Eaton binding and
   with no other, `light_kind` only on a light, `placement` and `positioning` only on blinds,
-  and the bounds of the SDK models (address, generation 1..4, channel 0..3, point 1..99, the
+  and the bounds of the SDK models (address, generation 1..4, channel 0..3 - or 200..299 for a
+  presence sensor since `V17` -, point 1..99, the
   two id formats, the Bluetooth address). Unique: a channel of a Shelly, by its address
   (`devices_shelly_address_channel_uq`) and by the id it reports over MQTT
   (`devices_shelly_device_id_channel_uq`) - both indexes on `COALESCE(shelly_channel, -1)`,

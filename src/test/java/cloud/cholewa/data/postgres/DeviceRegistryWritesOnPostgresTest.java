@@ -148,6 +148,11 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             "A device is reached through exactly one binding - shelly, eaton or bthome - and this one has none");
         invalid(SHELLY_BLINDS.replace("\"placement\"", "\"bthome\": {\"address\": \"7c:c6:b6:00:00:02\"}, \"placement\""),
             "A device is reached through exactly one binding - shelly, eaton or bthome - and this one has shelly and bthome");
+        //HAS-260: the model takes 0 to 299, the registry an output or the zone of a presence sensor
+        invalid(SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 4"),
+            "The channel of a Shelly is an output (0 to 3) or the zone of a presence sensor (200 to 299), not 4");
+        invalid(SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 200"),
+            "The channel 200 is a zone, which only a device of the kind [presence sensor] has, not one of the kind [blinds]");
 
         assertThat(count()).isZero();
     }
@@ -164,7 +169,7 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             SHELLY_BLINDS.replace("192.0.2.17", "192.0.2.300"),
             SHELLY_BLINDS.replace("\"generation\": 2, ", ""),
             SHELLY_BLINDS.replace("shellyplus2pm-a1b2c3d4e5f6", "shelly.plus/2pm"),
-            SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 4"),
+            SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 300"),
             BTHOME_WEATHER.replace("7c:c6:b6:00:00:01", "7C:C6:B6:00:00:01"),
             BTHOME_WEATHER.replace("weather station", "thermostat")
         )) {

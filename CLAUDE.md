@@ -238,7 +238,8 @@ writes of both registries and of the calendar are open to whoever reaches the in
   not be null. (The household entities carry such annotations from before; they do nothing.)
 - **`id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`** - without the `NOT NULL UNIQUE` the
   older tables add, which only buys a second index on the id.
-- **The schema repeats the bounds of the SDK models** (generation 1..4, channel 0..3, point
+- **The schema repeats the bounds of the SDK models** (generation 1..4, channel 0..3 or a zone
+  200..299 of a presence sensor - `V17`, HAS-260, the one bound the SDK states wider, 0..299, point
   1..99, the formats): change them in the SDK and in a new migration together. The point range
   is now stated in a fifth place (see the Eaton section).
 - **The id is exposed** - against "no surrogate id" of the household. A device has no natural
