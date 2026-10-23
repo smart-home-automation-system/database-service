@@ -11,7 +11,7 @@
 
 ![GitHub top language](https://img.shields.io/github/languages/top/smart-home-automation-system/database-service?style=plastic)
 ![Java](https://img.shields.io/badge/java-21-yellow?style=plastic)
-![SpringBoot](https://img.shields.io/badge/SpringBoot-4.1.1-blue?style=plastic)
+![SpringBoot](https://img.shields.io/badge/SpringBoot-4.1.2-blue?style=plastic)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=smart-home-automation-system_database-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=smart-home-automation-system_database-service)
 [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=smart-home-automation-system_database-service&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=smart-home-automation-system_database-service)
 
@@ -135,6 +135,21 @@ What a reader can rely on:
   that must not use a switched-off device filters.
 - **A Bluetooth sensor names no gateway**: `bthome` is its address alone. Any device of the
   kind `bthome gateway` may deliver its readings, and an address is in the registry once.
+- **An `appliance`** (since 0.18.0, SDK 1.13.0, HAS-272) is a washing machine, a dryer or a
+  dishwasher, registered as the Shelly plug it runs on, with `appliance` - how `appliance-service`
+  reads a cycle from the draw of the plug and how it reminds the household:
+
+  ```json
+  {"id": 64, "name": "Dishwasher", "room": "kitchen", "kind": "appliance", "enabled": true, "vendor": "shelly",
+   "shelly": {"address": "192.0.2.64", "generation": 1, "channel": 0},
+   "appliance": {"runningAboveWatts": 20, "idleBelowWatts": 3, "minRunMinutes": 5, "finishedAfterMinutes": 10,
+                 "reminderEveryMinutes": 30, "maxReminders": 4, "quietFrom": "22:00", "quietTo": "07:00"}}
+  ```
+
+  All eight settings are there for an appliance and none for another kind; the quiet times are a
+  local time of the house, `HH:mm`. **A reader of every kind has to know the kind first**: a
+  client on an SDK before 1.13.0 that reads the registry without `?kind=` (the dashboard) fails on
+  it, so no appliance is registered before such a reader moved.
 - **A device of the Eaton configuration has a name the registry gave it** - its room, its
   kind and its point (`Living room temperature sensor 45`) - because a configuration has none.
 - A device is addressed by `id` here, unlike a member of the household (by name): it has no
@@ -155,6 +170,7 @@ What a writer has to know:
     | `opening sensor`, `motion sensor`, `presence sensor`, `temperature sensor` | `shelly`, `eaton`, `bthome` |
     | `weather station` | `bthome` |
     | `bthome gateway` | `shelly` |
+    | `appliance` (since 0.18.0) | `shelly` - the plug the appliance runs on |
 
   - a Shelly channel is an output, 0 to 3, of any kind - or a zone, 200 to 299 (`presencezone:200`),
     of a `presence sensor` alone (since 0.17.0, HAS-260);
@@ -165,7 +181,10 @@ What a writer has to know:
     three is required;
   - `openingSensors` only on `blinds`, each id once, no `null`, and each one a registered device
     of the kind `opening sensor` - an id nobody has, or a device of another kind, is named in
-    `details`. An id below 1 fails the model (`400` without a code).
+    `details`. An id below 1 fails the model (`400` without a code);
+  - `appliance` (since 0.18.0, SDK 1.13.0, HAS-272) on an `appliance` and on nothing else, and an
+    `appliance` always with it - its eight settings, each required and bounded by the model
+    (`400` without a code), and `idleBelowWatts` below `runningAboveWatts`.
 - **A binding is one device** - `409` with the code `DEVICE_CONFLICT`, and `details` names
   what is taken: a channel of a Shelly by its address, a channel of a Shelly by its MQTT id,
   a point of an Eaton gateway, a Bluetooth address. A Shelly without a channel is one device
@@ -275,6 +294,10 @@ Since 0.9.0 a member also has a **role** (`admin` or `resident`) and **rooms** (
 | `POST` | `/home/household/member/{name}/device` | Register a device of the member (`MemberPhoneDetails`). `201 Created`; `404` for an unknown member; `409` when the MAC is already registered or the member already has a device of that name. |
 | `PATCH` | `/home/household/member/{name}/device?mac=<mac>` | Change the name and MAC of the member's device. `200 OK`; `404` for an unknown member or device; `409` as above. |
 | `DELETE` | `/home/household/member/{name}/device?mac=<mac>` | Remove the member's device. `204 No Content`; `404` for an unknown member or device. |
+| `GET` | `/home/household/push-config` | The public VAPID key the installed application subscribes its browser with (since 0.18.0, HAS-272): `{"publicKey": "..."}` - `{}` when the deployment has none (`household.push.public-key`), and the application then offers no push. `200 OK`. |
+| `PUT` | `/home/household/member/{name}/push-subscriptions` | Store the Web Push subscription of a browser of the member (`PushSubscription`: `endpoint` https, `keys` `p256dh` and `auth` base64url, optional `userAgent`; a `createdAt` in the body is ignored). **Upsert by the endpoint**: a browser that subscribes again replaces what it said, and one that subscribes for another member is from then on that member's. `200 OK` with the stored subscription; `404` for an unknown member; `400` with `INVALID_HOUSEHOLD_MEMBER` for a member who is switched off; `400` (no code) for a body the model refuses. |
+| `DELETE` | `/home/household/member/{name}/push-subscriptions?endpoint=<endpoint>` | Remove a subscription of the member. `204 No Content`, also when the member had none of that endpoint (a browser may unsubscribe twice); `404` for an unknown member; `400` without an endpoint. |
+| `GET` | `/home/push-subscriptions?members=<name>,<name>` | **Inside the cluster only** - not routed by the gateway: the subscriptions of the named members who are switched on, keys included, in the order they were stored; the read of `notification-service`. Names in any letter case; a name the registry does not know names nobody. `200 OK`, `[]` when there is none; `400` without a name, with an empty one or with more than 20. |
 
 The `mac` query parameter is matched case-insensitively (`AA:BB:…` finds `aa:bb:…`).
 
@@ -310,11 +333,11 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `UNKNOWN_GATEWAY` | 400 | `gateway` is not one of the known values |
 | `NOT_FOUND_HOUSEHOLD_MEMBER` | 404 | no member of that name |
 | `HOUSEHOLD_CONFLICT` | 409 | the name or the phone belongs to another member |
-| `INVALID_HOUSEHOLD_MEMBER` | 400 | the rooms list a room twice, or contain `null`; the same for the permissions |
+| `INVALID_HOUSEHOLD_MEMBER` | 400 | the rooms list a room twice, or contain `null`; the same for the permissions; a push subscription for a member who is switched off |
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
-| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor` |
+| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts` |
 | `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry; or the device is an opening sensor that blinds still name, and cannot be removed |
 | `NOT_FOUND_DAY_OFF` | 404 | the household added no day off on that date - a holiday and a weekend are days off without being stored |
 
@@ -361,6 +384,16 @@ does not know: the value fails while the body is read, and the answer is a `400`
   so a Shelly without a channel counts as one; a point of an Eaton gateway
   (`devices_eaton_gateway_point_uq`); a Bluetooth sensor, by its address
   (`devices_bthome_address_uq`).
+- **Appliances** (`V18`): eight nullable columns of `devices`, `appliance_running_above_watts`
+  to `appliance_max_reminders` (`INT`) and `appliance_quiet_from` / `appliance_quiet_to`
+  (`TIME`, to the minute). All filled exactly when the kind is `APPLIANCE`
+  (`devices_appliance_of_appliances`), within the bounds of the SDK (`devices_appliance_range`),
+  idle below running (`devices_appliance_idle_below_running`).
+- **Push subscriptions** (`V19`): `push_subscriptions` - `member_id` (`ON DELETE CASCADE`),
+  `endpoint` (unique - `push_subscriptions_endpoint_uq`, https only), `p256dh` and `auth`
+  (base64url of the lengths a browser gives), `user_agent`, `created_at`, and `last_used_at`
+  for the sender to come (HAS-276), empty until then. A table of its own, never a column of
+  `household_members`.
 - **Household registry** (`V8`–`V10`): `household_members` (`name` unique ignoring letter case
   since `V10`, `phone` unique, phone
   checked to be E.164 since `V9` — `V8` stored `xxx-xxx-xxx` and `V9` converted the existing

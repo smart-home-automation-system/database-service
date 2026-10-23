@@ -11,6 +11,7 @@ import cloud.cholewa.data.household.model.HouseholdMemberEntity;
 import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
+import cloud.cholewa.data.household.repository.PushSubscriptionRepository;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPhoneDetails;
@@ -73,6 +74,9 @@ class HouseholdMemberServiceTest {
 
     @Mock
     private MemberDeviceRepository deviceRepository;
+
+    @Mock
+    private PushSubscriptionRepository pushSubscriptionRepository;
 
     @Spy
     private MemberDeviceMapper deviceMapper = new MemberDeviceMapperImpl();
@@ -359,6 +363,9 @@ class HouseholdMemberServiceTest {
         when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(STORED));
         when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
         when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.just(DEVICE));
+        if (!active) {
+            when(pushSubscriptionRepository.deleteAllOfMember(7L)).thenReturn(Mono.just(2L));
+        }
 
         final Mono<HouseholdMember> result = active
             ? sut.activateHouseholdMember("Ola")
@@ -378,6 +385,12 @@ class HouseholdMemberServiceTest {
         assertThat(saved.getUpdatedAt()).isNotNull();
         assertThat(saved.getName()).isEqualTo("Ola");
         assertThat(saved.isActive()).isEqualTo(active);
+        //switched off, the member keeps no push subscription; switched on, nothing is touched (HAS-272)
+        if (active) {
+            verifyNoInteractions(pushSubscriptionRepository);
+        } else {
+            verify(pushSubscriptionRepository).deleteAllOfMember(7L);
+        }
     }
 
     @Test
@@ -631,6 +644,9 @@ class HouseholdMemberServiceTest {
         when(repository.findByNameIgnoreCase("Ola")).thenReturn(Mono.just(STORED));
         when(repository.save(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
         when(deviceRepository.findAllByMemberId(7L)).thenReturn(Flux.empty());
+        if (!active) {
+            when(pushSubscriptionRepository.deleteAllOfMember(7L)).thenReturn(Mono.just(0L));
+        }
 
         (active ? sut.activateHouseholdMember("Ola") : sut.deactivateHouseholdMember("Ola"))
             .as(StepVerifier::create)

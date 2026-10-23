@@ -1,6 +1,7 @@
 package cloud.cholewa.data.device.registry.mapper;
 
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
+import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BlindsPlacement;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
@@ -14,6 +15,7 @@ import cloud.cholewa.home.model.SmartVendor;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 
@@ -41,6 +43,11 @@ class DeviceEntityMapperTest {
         .placement(BlindsPlacement.EXTERNAL)
         .positioning(true)
         .openingSensors(List.of(31L, 30L))
+        .build();
+
+    private static final ApplianceSettings APPLIANCE = ApplianceSettings.builder()
+        .runningAboveWatts(20).idleBelowWatts(3).minRunMinutes(5).finishedAfterMinutes(10)
+        .reminderEveryMinutes(30).maxReminders(4).quietFrom("22:00").quietTo("07:00")
         .build();
 
     private final DeviceEntityMapper mapper = new DeviceEntityMapper();
@@ -172,6 +179,7 @@ class DeviceEntityMapperTest {
             .placement(BlindsPlacement.INTERNAL)
             .positioning(false)
             .openingSensors(List.of(31L))
+            .appliance(APPLIANCE)
             .build();
         final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED).build();
 
@@ -201,6 +209,14 @@ class DeviceEntityMapperTest {
             .placement(BlindsPlacement.INTERNAL)
             .positioning(false)
             .openingSensors(List.of(31L))
+            .applianceRunningAboveWatts(20)
+            .applianceIdleBelowWatts(3)
+            .applianceMinRunMinutes(5)
+            .applianceFinishedAfterMinutes(10)
+            .applianceReminderEveryMinutes(30)
+            .applianceMaxReminders(4)
+            .applianceQuietFrom(LocalTime.of(22, 0))
+            .applianceQuietTo(LocalTime.of(7, 0))
             .build();
 
         final DeviceEntity off = mapper.withEnabled(existing, false);
@@ -210,6 +226,59 @@ class DeviceEntityMapperTest {
         assertThat(off.getEnabled()).isFalse();
         assertThat(off.getUpdatedAt()).isBetween(aMinuteAgo(), now());
         assertThat(mapper.withEnabled(off, true).getEnabled()).isTrue();
+    }
+
+    //An appliance (HAS-272): its settings become the eight columns, the quiet times a TIME of the house
+    @Test
+    void should_make_a_new_row_of_an_appliance_with_its_settings() {
+        final SmartDevice plug = SmartDevice.builder().name("Dishwasher").room(RoomName.KITCHEN)
+            .kind(DeviceKind.APPLIANCE).vendor(SmartVendor.SHELLY).enabled(true)
+            .shelly(ShellyBinding.builder().address("192.0.2.64").generation(1).channel(0).build())
+            .appliance(APPLIANCE)
+            .build();
+
+        assertThat(mapper.toNewEntity(plug)).usingRecursiveComparison().ignoringFields("createdAt")
+            .isEqualTo(DeviceEntity.builder()
+                .name("Dishwasher")
+                .room(RoomName.KITCHEN)
+                .kind(DeviceKind.APPLIANCE)
+                .vendor(SmartVendor.SHELLY)
+                .enabled(true)
+                .shellyAddress("192.0.2.64")
+                .shellyGeneration(1)
+                .shellyChannel(0)
+                .openingSensors(List.of())
+                .applianceRunningAboveWatts(20)
+                .applianceIdleBelowWatts(3)
+                .applianceMinRunMinutes(5)
+                .applianceFinishedAfterMinutes(10)
+                .applianceReminderEveryMinutes(30)
+                .applianceMaxReminders(4)
+                .applianceQuietFrom(LocalTime.of(22, 0))
+                .applianceQuietTo(LocalTime.of(7, 0))
+                .build());
+    }
+
+    //a replacement without the part leaves none of the eight behind - the schema would refuse a half
+    @Test
+    void should_clear_every_setting_of_an_appliance_a_replacement_leaves_out() {
+        final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED)
+            .applianceRunningAboveWatts(20).applianceIdleBelowWatts(3).applianceMinRunMinutes(5)
+            .applianceFinishedAfterMinutes(10).applianceReminderEveryMinutes(30).applianceMaxReminders(4)
+            .applianceQuietFrom(LocalTime.of(22, 0)).applianceQuietTo(LocalTime.of(7, 0)).build();
+        final SmartDevice blinds = SmartDevice.builder().name("Office window").room(RoomName.OFFICE)
+            .kind(DeviceKind.BLINDS).vendor(SmartVendor.SHELLY).enabled(true)
+            .shelly(ShellyBinding.builder().address("192.0.2.17").generation(1).build())
+            .build();
+
+        final DeviceEntity entity = mapper.toReplacement(existing, blinds);
+
+        assertThat(entity).extracting(
+                DeviceEntity::getApplianceRunningAboveWatts, DeviceEntity::getApplianceIdleBelowWatts,
+                DeviceEntity::getApplianceMinRunMinutes, DeviceEntity::getApplianceFinishedAfterMinutes,
+                DeviceEntity::getApplianceReminderEveryMinutes, DeviceEntity::getApplianceMaxReminders,
+                DeviceEntity::getApplianceQuietFrom, DeviceEntity::getApplianceQuietTo)
+            .containsOnlyNulls();
     }
 
     //the column is NOT NULL: a list sent as null is none, and the row never shares the payload's list

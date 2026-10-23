@@ -1,6 +1,7 @@
 package cloud.cholewa.data.device.registry.service;
 
 import cloud.cholewa.data.error.InvalidDeviceException;
+import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BlindsPlacement;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
@@ -30,6 +31,7 @@ class DeviceRulesTest {
         .address("192.0.2.17").generation(2).deviceId("shellyplus1-a1b2c3d4e5f6").build();
     private static final EatonBinding EATON = EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(44).build();
     private static final BthomeBinding BTHOME = BthomeBinding.builder().address("7c:c6:b6:00:00:01").build();
+    private static final ApplianceSettings APPLIANCE = appliance().build();
 
     //every pair of a kind and a binding the house may have, with the vendor the binding is of
     @ParameterizedTest
@@ -114,7 +116,8 @@ class DeviceRulesTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY"}, mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY", "APPLIANCE"},
+        mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_way_a_light_is_driven_on_anything_but_a_light(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.EATON, "eaton").lightKind(LightKind.DIMMER).build();
 
@@ -278,6 +281,73 @@ class DeviceRulesTest {
         assertThatThrownBy(() -> DeviceRules.check(blinds))
             .isInstanceOf(InvalidDeviceException.class)
             .hasMessage("openingSensors name a sensor more than once: [31, 30, 31]");
+    }
+
+    //An appliance (HAS-272) is the Shelly plug it runs on, with its settings
+    @Test
+    void should_take_an_appliance_on_a_shelly_plug_with_its_settings() {
+        final SmartDevice plug = device(DeviceKind.APPLIANCE, SmartVendor.SHELLY, "shelly").appliance(APPLIANCE).build();
+
+        assertThatCode(() -> DeviceRules.check(plug)).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"EATON, eaton", "SHELLY, bthome", "OTHER, bthome"})
+    void should_refuse_an_appliance_reached_through_anything_but_a_shelly(final SmartVendor vendor, final String binding) {
+        final SmartDevice plug = device(DeviceKind.APPLIANCE, vendor, binding).appliance(APPLIANCE).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(plug))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessageContaining("[appliance]")
+            .hasMessageEndingWith("only through: shelly");
+    }
+
+    //without the settings the plug's draw cannot be read as a cycle
+    @Test
+    void should_refuse_an_appliance_without_its_settings() {
+        final SmartDevice plug = device(DeviceKind.APPLIANCE, SmartVendor.SHELLY, "shelly").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(plug))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the kind [appliance] needs its appliance settings");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = {"APPLIANCE", "WEATHER_STATION"}, mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_the_settings_of_an_appliance_on_another_kind(final DeviceKind kind) {
+        final SmartDevice device = device(kind, SmartVendor.SHELLY, "shelly").appliance(APPLIANCE).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("appliance describes an appliance, not a device of the kind [" + kind.getValue() + "]");
+    }
+
+    //the one rule between two settings: idle has to be below running, or every draw is both
+    @ParameterizedTest
+    @CsvSource({"20, 20", "20, 5", "100, 50"})
+    void should_refuse_an_idle_draw_that_is_not_below_the_running_one(final int idle, final int running) {
+        final SmartDevice plug = device(DeviceKind.APPLIANCE, SmartVendor.SHELLY, "shelly")
+            .appliance(appliance().idleBelowWatts(idle).runningAboveWatts(running).build())
+            .build();
+
+        assertThatThrownBy(() -> DeviceRules.check(plug))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("idleBelowWatts (" + idle + ") has to be below runningAboveWatts (" + running + ")");
+    }
+
+    @Test
+    void should_take_an_idle_draw_just_below_the_running_one() {
+        final SmartDevice plug = device(DeviceKind.APPLIANCE, SmartVendor.SHELLY, "shelly")
+            .appliance(appliance().idleBelowWatts(19).runningAboveWatts(20).build())
+            .build();
+
+        assertThatCode(() -> DeviceRules.check(plug)).doesNotThrowAnyException();
+    }
+
+    private static ApplianceSettings.ApplianceSettingsBuilder<?, ?> appliance() {
+        return ApplianceSettings.builder()
+            .runningAboveWatts(20).idleBelowWatts(3).minRunMinutes(5).finishedAfterMinutes(10)
+            .reminderEveryMinutes(30).maxReminders(4).quietFrom("22:00").quietTo("07:00");
     }
 
     private static SmartDevice.SmartDeviceBuilder<?, ?> device(

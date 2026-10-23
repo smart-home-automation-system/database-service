@@ -1,6 +1,7 @@
 package cloud.cholewa.data.device.registry.mapper;
 
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
+import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BlindsPlacement;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
@@ -14,6 +15,7 @@ import cloud.cholewa.home.model.SmartVendor;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,6 +60,60 @@ class SmartDeviceMapperTest {
             .positioning(true)
             .openingSensors(List.of(31L, 30L))
             .build());
+    }
+
+    //An appliance (HAS-272): the eight settings of its row as the part of the model, the quiet times
+    //as HH:mm text - minutes with a leading zero, never seconds
+    @Test
+    void should_map_an_appliance_with_its_settings() {
+        final DeviceEntity entity = row()
+            .id(64L)
+            .name("Dishwasher")
+            .room(RoomName.KITCHEN)
+            .kind(DeviceKind.APPLIANCE)
+            .vendor(SmartVendor.SHELLY)
+            .enabled(true)
+            .shellyAddress("192.0.2.64")
+            .shellyGeneration(1)
+            .shellyChannel(0)
+            .applianceRunningAboveWatts(20)
+            .applianceIdleBelowWatts(3)
+            .applianceMinRunMinutes(5)
+            .applianceFinishedAfterMinutes(10)
+            .applianceReminderEveryMinutes(30)
+            .applianceMaxReminders(0)
+            .applianceQuietFrom(LocalTime.of(22, 0))
+            .applianceQuietTo(LocalTime.of(7, 5))
+            .build();
+
+        assertThat(mapper.toDevice(entity)).isEqualTo(SmartDevice.builder()
+            .id(64L)
+            .name("Dishwasher")
+            .room(RoomName.KITCHEN)
+            .kind(DeviceKind.APPLIANCE)
+            .vendor(SmartVendor.SHELLY)
+            .enabled(true)
+            .shelly(ShellyBinding.builder().address("192.0.2.64").generation(1).channel(0).build())
+            .appliance(ApplianceSettings.builder()
+                .runningAboveWatts(20)
+                .idleBelowWatts(3)
+                .minRunMinutes(5)
+                .finishedAfterMinutes(10)
+                .reminderEveryMinutes(30)
+                .maxReminders(0)
+                .quietFrom("22:00")
+                .quietTo("07:05")
+                .build())
+            .build());
+    }
+
+    //a device of another kind has no settings of an appliance - the part is left out, not an empty object
+    @Test
+    void should_leave_out_the_settings_of_an_appliance_on_another_kind() {
+        final DeviceEntity entity = row().id(17L).name("Office window").room(RoomName.OFFICE).kind(DeviceKind.BLINDS)
+            .vendor(SmartVendor.SHELLY).enabled(true).shellyAddress("192.0.2.17").shellyGeneration(1).build();
+
+        assertThat(mapper.toDevice(entity).getAppliance()).isNull();
     }
 
     //a window without a sensor: the list is left out, as the builder leaves it and the JSON omits it

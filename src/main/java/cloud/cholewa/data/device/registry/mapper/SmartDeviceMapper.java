@@ -1,6 +1,7 @@
 package cloud.cholewa.data.device.registry.mapper;
 
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
+import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.ShellyBinding;
@@ -33,6 +34,25 @@ public class SmartDeviceMapper {
             .placement(entity.getPlacement())
             .positioning(entity.getPositioning())
             .openingSensors(openingSensors(entity))
+            .appliance(appliance(entity))
+            .build();
+    }
+
+    //the settings of an appliance are told by the first of them, as a binding by the column it cannot
+    //do without - the schema keeps all eight together (V18)
+    private static ApplianceSettings appliance(final DeviceEntity entity) {
+        if (entity.getApplianceRunningAboveWatts() == null) {
+            return null;
+        }
+        return ApplianceSettings.builder()
+            .runningAboveWatts(entity.getApplianceRunningAboveWatts())
+            .idleBelowWatts(entity.getApplianceIdleBelowWatts())
+            .minRunMinutes(entity.getApplianceMinRunMinutes())
+            .finishedAfterMinutes(entity.getApplianceFinishedAfterMinutes())
+            .reminderEveryMinutes(entity.getApplianceReminderEveryMinutes())
+            .maxReminders(entity.getApplianceMaxReminders())
+            .quietFrom(QuietTime.format(entity.getApplianceQuietFrom()))
+            .quietTo(QuietTime.format(entity.getApplianceQuietTo()))
             .build();
     }
 
