@@ -1,6 +1,7 @@
 package cloud.cholewa.data.device.registry.mapper;
 
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
+import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.ShellyBinding;
@@ -49,6 +50,7 @@ public class DeviceEntityMapper {
         final ShellyBinding shelly = device.getShelly();
         final EatonBinding eaton = device.getEaton();
         final BthomeBinding bthome = device.getBthome();
+        final ApplianceSettings appliance = device.getAppliance();
 
         return DeviceEntity.builder()
             .name(device.getName())
@@ -66,7 +68,15 @@ public class DeviceEntityMapper {
             .lightKind(device.getLightKind())
             .placement(device.getPlacement())
             .positioning(device.getPositioning())
-            .openingSensors(openingSensorsOf(device));
+            .openingSensors(openingSensorsOf(device))
+            .applianceRunningAboveWatts(appliance == null ? null : appliance.getRunningAboveWatts())
+            .applianceIdleBelowWatts(appliance == null ? null : appliance.getIdleBelowWatts())
+            .applianceMinRunMinutes(appliance == null ? null : appliance.getMinRunMinutes())
+            .applianceFinishedAfterMinutes(appliance == null ? null : appliance.getFinishedAfterMinutes())
+            .applianceReminderEveryMinutes(appliance == null ? null : appliance.getReminderEveryMinutes())
+            .applianceMaxReminders(appliance == null ? null : appliance.getMaxReminders())
+            .applianceQuietFrom(appliance == null ? null : QuietTime.parse(appliance.getQuietFrom()))
+            .applianceQuietTo(appliance == null ? null : QuietTime.parse(appliance.getQuietTo()));
     }
 
     //the column is never null: a list the payload left out, or sent as null, is none

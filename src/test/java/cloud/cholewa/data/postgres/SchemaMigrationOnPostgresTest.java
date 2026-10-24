@@ -64,7 +64,8 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             "devices_shelly_address_channel_uq",
             "devices_shelly_device_id_channel_uq",
             "devices_eaton_gateway_point_uq",
-            "devices_bthome_address_uq"
+            "devices_bthome_address_uq",
+            "push_subscriptions_endpoint_uq"
         );
     }
 
@@ -283,6 +284,39 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
         assertThat(rows("SELECT cardinality(opening_sensors) AS sensors FROM %s.devices".formatted(schema)))
             .extracting(device -> device.get("sensors"))
             .containsExactly(0, 0);
+    }
+
+    //V18 and V19 (HAS-272) over the registry as it is: a device of every other kind keeps no setting of
+    //an appliance, and so does a row the released version inserts afterwards, not naming the columns;
+    //a member of the household is untouched and has no push subscription
+    @Test
+    void should_leave_every_device_without_the_settings_of_an_appliance_also_one_an_older_release_inserts() {
+        final String schema = "rehearsal_appliances";
+        startOver(schema);
+        migrate(schema, "17");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Cinema windows', 'CINEMA', 'BLINDS', 'EATON', true, 'BLINDS', 20)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.household_members (created_at, name, phone, active, role, rooms, permissions)
+            VALUES (now(), 'Anna', '+48111222333', true, 'RESIDENT', '{}', '{}')""".formatted(schema));
+
+        migrate(schema, "latest");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Office windows', 'OFFICE', 'BLINDS', 'EATON', true, 'BLINDS', 21)""".formatted(schema));
+
+        assertThat(rows("""
+            SELECT num_nonnulls(appliance_running_above_watts, appliance_idle_below_watts, appliance_min_run_minutes,
+                appliance_finished_after_minutes, appliance_reminder_every_minutes, appliance_max_reminders,
+                appliance_quiet_from, appliance_quiet_to) AS settings
+            FROM %s.devices""".formatted(schema)))
+            .extracting(device -> device.get("settings"))
+            .containsExactly(0, 0);
+        assertThat(row("SELECT count(*) AS members FROM %s.household_members".formatted(schema)))
+            .containsEntry("members", 1L);
+        assertThat(row("SELECT count(*) AS subscriptions FROM %s.push_subscriptions".formatted(schema)))
+            .containsEntry("subscriptions", 0L);
     }
 
     //the container outlives the test, and with it the schema of an earlier run in the same JVM

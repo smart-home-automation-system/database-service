@@ -1,6 +1,7 @@
 package cloud.cholewa.data.device.registry.service;
 
 import cloud.cholewa.data.error.InvalidDeviceException;
+import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.SmartDevice;
 import cloud.cholewa.home.model.SmartVendor;
@@ -79,6 +80,30 @@ final class DeviceRules {
         }
 
         checkOpeningSensors(device);
+        checkAppliance(device);
+    }
+
+    //The settings of an appliance (HAS-272): there for the kind appliance and for nothing else - an
+    //appliance without them could not tell a cycle from the draw of its plug. The model checks each
+    //setting on its own (@Valid); the one rule between two of them is here, and the schema repeats
+    //both (V18)
+    private static void checkAppliance(final SmartDevice device) {
+        final ApplianceSettings appliance = device.getAppliance();
+        final boolean isAppliance = device.getKind() == DeviceKind.APPLIANCE;
+        if (isAppliance && appliance == null) {
+            throw new InvalidDeviceException("A device of the kind [appliance] needs its appliance settings");
+        }
+        if (!isAppliance && appliance != null) {
+            throw new InvalidDeviceException(
+                "appliance describes an appliance, not a device of the kind [" + device.getKind().getValue() + "]");
+        }
+        //both are required by the model; a body that skipped @Valid must not fail here with an NPE
+        if (isAppliance && appliance.getIdleBelowWatts() != null && appliance.getRunningAboveWatts() != null
+            && appliance.getIdleBelowWatts() >= appliance.getRunningAboveWatts()) {
+            throw new InvalidDeviceException(
+                "idleBelowWatts (" + appliance.getIdleBelowWatts() + ") has to be below runningAboveWatts ("
+                    + appliance.getRunningAboveWatts() + ")");
+        }
     }
 
     //The channel of a Shelly (HAS-260): 0 to 3 is an output, of any kind; 200 to 299 a dynamic
@@ -152,6 +177,8 @@ final class DeviceRules {
             case OPENING_SENSOR, MOTION_SENSOR, PRESENCE_SENSOR, TEMPERATURE_SENSOR -> EnumSet.allOf(Binding.class);
             case WEATHER_STATION -> EnumSet.of(Binding.BTHOME);
             case BTHOME_GATEWAY -> EnumSet.of(Binding.SHELLY);
+            //an appliance is watched through the Shelly plug it runs on (HAS-272)
+            case APPLIANCE -> EnumSet.of(Binding.SHELLY);
         };
     }
 

@@ -2,7 +2,7 @@
 
 `cloud.cholewa:database-service` — the **persistence facade** of the smart home: the other
 services never talk to PostgreSQL themselves, they call this one over REST. Reactive (WebFlux,
-Spring Data R2DBC), Flyway for the schema. Java 21, Spring Boot 4.1.1
+Spring Data R2DBC), Flyway for the schema. Java 21, Spring Boot 4.1.2
 (`spring-boot-starter-parent`), Maven. Local port **6005** (management **8005**); in the deployed
 `home` profile **6200** with Actuator on **8200**, where the probes and the Prometheus scrape go.
 Docker image `magikabdul/database-service`; the pom keeps `0.0.1-SNAPSHOT`, the released version
@@ -50,7 +50,17 @@ the day it is deployed, every method, without a gateway change. **Treat the whol
 published**: the gateway matches the path as it was sent, so a dot segment below a tail
 (`/household/../x`) is forwarded too, and an unrouted path is hidden only while no hop
 normalises it. An endpoint that must stay inside the cluster does not belong in this service
-as the route stands. Nothing on the gateway is authenticated — the names, phones and MACs of
+as the route stands - **with one exception, by the owner's choice (HAS-272)**: `GET
+/push-subscriptions`, the read of `notification-service` that answers the keys of the browsers,
+lives outside every routed prefix. It is hidden only while no hop resolves a dot segment: the
+ingress and the gateway pass `/household/../push-subscriptions` on as it was sent, and
+`PushSubscriptionControllerTest` pins that Spring's routing here does not resolve it (404). That
+test runs on the mock exchange of `@WebFluxTest`, not on Reactor Netty, so **after every deploy
+that bumps Boot or Reactor Netty, and after the first one of HAS-272**, `GET
+/home/push-subscriptions?members=x` and `/home/household/../push-subscriptions?members=x`
+through the ingress (`curl --path-as-is`) must answer 404 - the only check of the whole path.
+Never move that read below a routed prefix, and look at it again if a hop ever starts normalising
+paths. Nothing on the gateway is authenticated — the names, phones and MACs of
 the household registry, the names, rooms and LAN addresses of the device registry, and the
 writes of both registries and of the calendar are open to whoever reaches the ingress.
 
@@ -187,6 +197,42 @@ writes of both registries and of the calendar are open to whoever reaches the in
   `Comparable`: sort with an explicit comparator (the no-arg `collectSortedList()` threw
   `ClassCastException` with two members).
 - Deleting a member cascades to its devices in the database (`ON DELETE CASCADE`), not in code.
+- **Push subscriptions** (HAS-272, `V19`, `PushSubscription` of SDK 1.13.0): the Web Push
+  subscriptions of the members' browsers, table `push_subscriptions`.
+  - **A table and endpoints of their own, never a field of `HouseholdMember`** (owner,
+    2026-10-23): a whole write of a member would drop a list it does not send, and the routed
+    `GET /household` would hand the keys out. The member read, the profiles and every member
+    response stay without them - nothing in `HouseholdMemberService` reads the table.
+  - **The endpoint is the subscription** (`push_subscriptions_endpoint_uq`): `PUT` is one
+    `INSERT ... ON CONFLICT (endpoint) DO UPDATE` (`PushSubscriptionRepository`, not an
+    `R2dbcRepository` - the rule of `DayOffRepository`), which keeps the id and `created_at` and
+    moves a browser to the member who subscribed last (a shared tablet on another personal link).
+  - **A switched-off member keeps none**: `deactivate` deletes them after the row is saved, a
+    `PUT` for such a member is `409 MEMBER_SWITCHED_OFF` (a code of its own, for the dashboard to
+    word - not `INVALID_HOUSEHOLD_MEMBER`, which it words as rooms listed twice), and the read
+    takes active members only - so a failure between the save and the delete hands nothing out.
+    A removed member takes them along (`ON DELETE CASCADE`).
+  - **Known limit - a `PUT` racing a `deactivate`** (review of HAS-272, accepted): `store` checks
+    `active` and then upserts, so a `deactivate` between the two leaves one row of a switched-off
+    member. The read hides it; when the member is switched on again, that browser is posted to
+    without subscribing anew. One writer per member makes it rare; the fix, should it matter, is
+    the `active` check inside the statement (`INSERT ... SELECT ... WHERE active`).
+  - **The read compares names with PostgreSQL's `upper()` on both sides**, as `V10` keeps them
+    unique - not a Java `toUpperCase`, which disagrees for some letters. **Known limit**: the
+    names arrive comma-separated and are matched as sent - a name holding a comma (the registry
+    takes one) cannot be asked for, and a name with a space around it matches nobody.
+  - **`DELETE` is idempotent** (204 for nothing to remove; the member must exist) - a browser may
+    unsubscribe twice. `last_used_at` is for the sender (HAS-276) and nothing writes it yet;
+    neither is there a delete by endpoint alone, which a sender that gets `410 Gone` from a push
+    service will want - its task adds it.
+  - **Never log a subscription whole**: the generated `toString` prints the keys. The service
+    logs the member and the host of the endpoint. (Logbook still logs the bodies at trace - the
+    accepted rule of the organization.)
+  - **The public VAPID key** is `household.push.public-key` (`HouseholdPushProperties`, bound in
+    `HouseholdPushConfig`, optional, checked as base64url when set): `GET /household/push-config`
+    answers `{}` without one, so the service deploys before HAS-273 gives the manifest a key. **In
+    the manifest the variable is `HOUSEHOLD_PUSH_PUBLICKEY`**; a misspelt one binds nothing and the
+    answer stays `{}` with no error anywhere - check `push-config` after the deploy that sets it.
 
 ## Device registry - the parts worth knowing before changing anything
 
@@ -306,7 +352,7 @@ writes of both registries and of the calendar are open to whoever reaches the in
     the Eaton binding and the other way round; a Shelly binding only for the vendor `shelly`
     (a Bluetooth sensor is `shelly` or `other`); and per kind the bindings it is reached
     through - `blinds` / `light` / `push button`: shelly, eaton; the four sensors: any; `weather station`:
-    bthome; `bthome gateway`: shelly. The switch names every kind, so a kind added to the SDK
+    bthome; `bthome gateway`: shelly; `appliance`: shelly. The switch names every kind, so a kind added to the SDK
     stops the compiler there. The matrix is the service's own reading of "the binding fits
     the vendor and the kind" - the README states it; change both.
   - **A Shelly of generation 2 or later needs its `deviceId`** (owner, 2026-10-12; the SDK
@@ -356,6 +402,22 @@ writes of both registries and of the calendar are open to whoever reaches the in
     `DeviceEntityMapper` writes `List.of()` for a list sent as `null`.
   - **Read it back as text** in the tests on PostgreSQL (`array_to_string`): the driver answers
     a `Long[]`, equal to nothing but itself.
+- **The settings of an appliance** (HAS-272, `V18`, SDK 1.13.0): the kind `appliance` is the Shelly
+  plug a washing machine, a dryer or a dishwasher runs on, with `ApplianceSettings` - eight
+  nullable columns `appliance_*` of `devices`.
+  - **Flat columns like a binding, told the same way**: `SmartDeviceMapper` answers the part when
+    `appliance_running_above_watts` is there, and the schema keeps all eight together and to
+    the kind (`devices_appliance_of_appliances`), within the bounds of the SDK
+    (`devices_appliance_range`) and idle below running (`devices_appliance_idle_below_running`).
+    `DeviceRules` says the same in words first (`INVALID_DEVICE`).
+  - **The quiet times are `TIME` here and `HH:mm` text in the model** (OpenAPI 3.0 has no local
+    time): `QuietTime` converts both ways, the range check of `V18` keeps them to the minute.
+  - **Nullable, not defaulted, for the rollout**: the released version's entity does not name
+    the columns, so its inserts leave them empty - right for every kind it knows (rehearsed in
+    `SchemaMigrationOnPostgresTest`).
+  - **No appliance is registered before every reader of every kind knows the kind**: the services
+    read by `?kind=` and never see it, the dashboard reads the whole registry and copies
+    `DeviceRules` (`device-rules.ts`) - it moves first.
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
@@ -525,6 +587,10 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `<dependencyManagement>` is gone since logbook 4.2.0 (with Boot 4.1.1, HAS-145), which
   declares the version JUnit 6 does; should the two disagree again, pin it — do not exclude it.
 - logbook needs the optional `spring-boot-http-client` module on Boot 4.1 (already declared).
+- **`cholewa-commons` 1.11.0** (HAS-272, from 1.9.0): Logbook runs as a WebFilter in the reactive
+  chain, so its lines carry the `traceId` (1.10.0), and the actuator is left out of its log
+  (1.10.1). This service has no `WebClient`, no own `LogbookClientHandler` and no `@Scheduled`
+  task, so nothing else of 1.10.0 / 1.11.0 applies here.
 - Mockito runs as an explicit `-javaagent` in the surefire `argLine`, with **`@{argLine}` first**
   so JaCoCo's agent from the Sonar workflow survives — dropping it zeroes the coverage and fails
   the gate. Surefire activates the `test` profile for every class and includes `*Test`/`*IT`
@@ -538,7 +604,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `src/test/java/cloud/cholewa/data/postgres`, all extending `OnPostgres`:
   `SchemaMigrationOnPostgresTest`, `HouseholdRegistryOnPostgresTest`,
   `EatonConfigurationOnPostgresTest`, `DeviceRegistryOnPostgresTest`,
-  `DeviceRegistryWritesOnPostgresTest`, `CalendarOnPostgresTest`. What to know before touching them:
+  `DeviceRegistryWritesOnPostgresTest`, `CalendarOnPostgresTest`, `PushSubscriptionsOnPostgresTest`. What to know before touching them:
   - **They start the whole application** (`@SpringBootTest`, nothing mocked) on a
     `postgres:17-alpine` in Docker (Testcontainers, versions managed by Boot). The `test`
     profile switches Flyway off; `OnPostgres` switches it on and points `database.*` and

@@ -6,11 +6,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.test.StepVerifier;
 
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 //The writes of the device registry on a real PostgreSQL, through the API and with the JSON a
 //client sends: a device of every binding, the four ways a binding can be taken, a device the
@@ -30,6 +32,16 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
     private static final String BTHOME_WEATHER = """
         {"name": "Garden weather", "room": "garden", "kind": "weather station", "vendor": "other", "enabled": true,
          "bthome": {"address": "7c:c6:b6:00:00:01"}}""";
+
+    private static final String SETTINGS = """
+        {"runningAboveWatts": 20, "idleBelowWatts": 3, "minRunMinutes": 5, "finishedAfterMinutes": 10,
+         "reminderEveryMinutes": 30, "maxReminders": 0, "quietFrom": "22:00", "quietTo": "07:05"}""";
+
+    private static final String PLUG = """
+        {"name": "Dishwasher", "room": "kitchen", "kind": "appliance", "vendor": "shelly", "enabled": true,
+         "shelly": {"address": "192.0.2.64", "generation": 1, "channel": 0}""";
+
+    private static final String APPLIANCE = PLUG + ", \"appliance\": " + SETTINGS + "}";
 
     @Autowired
     private WebTestClient webTestClient;
@@ -448,6 +460,129 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
     }
 
     //the id the registry answered with
+    //An appliance (HAS-272): the Shelly plug it runs on with its eight settings, the quiet times a TIME
+    //of the house and HH:mm again in what is answered
+    @Test
+    void should_register_an_appliance_with_its_settings_and_answer_them_as_they_were_sent() {
+        final long plug = added(APPLIANCE);
+
+        assertThat(stored(plug))
+            .containsEntry("kind", "APPLIANCE")
+            .containsEntry("shelly_generation", 1)
+            .containsEntry("appliance_running_above_watts", 20)
+            .containsEntry("appliance_idle_below_watts", 3)
+            .containsEntry("appliance_min_run_minutes", 5)
+            .containsEntry("appliance_finished_after_minutes", 10)
+            .containsEntry("appliance_reminder_every_minutes", 30)
+            .containsEntry("appliance_max_reminders", 0)
+            .containsEntry("appliance_quiet_from", LocalTime.of(22, 0))
+            .containsEntry("appliance_quiet_to", LocalTime.of(7, 5));
+
+        webTestClient.get()
+            .uri("/device/registry/{id}", plug)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.kind").isEqualTo("appliance")
+            .jsonPath("$.appliance.runningAboveWatts").isEqualTo(20)
+            .jsonPath("$.appliance.maxReminders").isEqualTo(0)
+            .jsonPath("$.appliance.quietFrom").isEqualTo("22:00")
+            .jsonPath("$.appliance.quietTo").isEqualTo("07:05");
+        //and found by its kind, which is how appliance-service will read it
+        webTestClient.get()
+            .uri("/device/registry?kind=appliance")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.length()").isEqualTo(1)
+            .jsonPath("$[0].id").isEqualTo(plug);
+    }
+
+    //a replacement changes the settings whole; there is no half of them to keep
+    @Test
+    void should_replace_the_settings_of_an_appliance() {
+        final long plug = added(APPLIANCE);
+
+        replaced(plug, APPLIANCE.replace("\"maxReminders\": 0", "\"maxReminders\": 4").replace("\"07:05\"", "\"06:30\""))
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.appliance.maxReminders").isEqualTo(4)
+            .jsonPath("$.appliance.quietTo").isEqualTo("06:30");
+
+        assertThat(stored(plug))
+            .containsEntry("appliance_max_reminders", 4)
+            .containsEntry("appliance_quiet_to", LocalTime.of(6, 30));
+    }
+
+    //refused in words by DeviceRules, before any CHECK of V18 answers with its name
+    @Test
+    void should_refuse_an_appliance_the_registry_does_not_take_and_say_why() {
+        invalid(PLUG + "}", "A device of the kind [appliance] needs its appliance settings");
+        invalid(APPLIANCE.replace("\"idleBelowWatts\": 3", "\"idleBelowWatts\": 20"),
+            "idleBelowWatts (20) has to be below runningAboveWatts (20)");
+        invalid(SHELLY_BLINDS.replace("\"positioning\": true}", "\"positioning\": true, \"appliance\": " + SETTINGS + "}"),
+            "appliance describes an appliance, not a device of the kind [blinds]");
+
+        assertThat(count()).isZero();
+    }
+
+    //what the model refuses on its own: a quiet time that is no HH:mm, a bound of a setting
+    @Test
+    void should_refuse_settings_the_model_does_not_take_without_a_bare_data_integrity_answer() {
+        for (final String body : List.of(
+            APPLIANCE.replace("\"22:00\"", "\"22:00:00\""),
+            APPLIANCE.replace("\"22:00\"", "\"24:00\""),
+            APPLIANCE.replace("\"runningAboveWatts\": 20", "\"runningAboveWatts\": 4"),
+            APPLIANCE.replace("\"maxReminders\": 0", "\"maxReminders\": 11"))) {
+            webTestClient.post()
+                .uri("/device/registry")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.errors[0].message").value(message -> assertThat(message).isNotEqualTo("Data integrity violation"));
+        }
+
+        assertThat(count()).isZero();
+    }
+
+    //the schema keeps the eight together and to appliances, for a row written past the API
+    @Test
+    void should_refuse_half_of_the_settings_and_settings_on_another_kind_in_the_schema() {
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
+                appliance_running_above_watts)
+            VALUES (now(), 'Dishwasher', 'KITCHEN', 'APPLIANCE', 'SHELLY', true, '192.0.2.64', 1, 20)"""))
+            .hasMessageContaining("devices_appliance_of_appliances");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
+                appliance_running_above_watts, appliance_idle_below_watts, appliance_min_run_minutes,
+                appliance_finished_after_minutes, appliance_reminder_every_minutes, appliance_max_reminders,
+                appliance_quiet_from, appliance_quiet_to)
+            VALUES (now(), 'Kitchen lamp', 'KITCHEN', 'LIGHT', 'SHELLY', true, '192.0.2.65', 1,
+                20, 3, 5, 10, 30, 4, '22:00', '07:00')"""))
+            .hasMessageContaining("devices_appliance_of_appliances");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
+                appliance_running_above_watts, appliance_idle_below_watts, appliance_min_run_minutes,
+                appliance_finished_after_minutes, appliance_reminder_every_minutes, appliance_max_reminders,
+                appliance_quiet_from, appliance_quiet_to)
+            VALUES (now(), 'Dishwasher', 'KITCHEN', 'APPLIANCE', 'SHELLY', true, '192.0.2.64', 1,
+                20, 30, 5, 10, 30, 4, '22:00', '07:00')"""))
+            .hasMessageContaining("devices_appliance_idle_below_running");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
+                appliance_running_above_watts, appliance_idle_below_watts, appliance_min_run_minutes,
+                appliance_finished_after_minutes, appliance_reminder_every_minutes, appliance_max_reminders,
+                appliance_quiet_from, appliance_quiet_to)
+            VALUES (now(), 'Dishwasher', 'KITCHEN', 'APPLIANCE', 'SHELLY', true, '192.0.2.64', 1,
+                20, 3, 5, 10, 30, 4, '22:00:30', '07:00')"""))
+            .hasMessageContaining("devices_appliance_range");
+
+        assertThat(count()).isZero();
+    }
+
     private long added(final String body) {
         final Map<?, ?> device = webTestClient.post()
             .uri("/device/registry")

@@ -9,6 +9,7 @@ import cloud.cholewa.data.household.model.HouseholdMemberEntity;
 import cloud.cholewa.data.household.model.MemberDeviceEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
 import cloud.cholewa.data.household.repository.MemberDeviceRepository;
+import cloud.cholewa.data.household.repository.PushSubscriptionRepository;
 import cloud.cholewa.home.model.HouseholdMember;
 import cloud.cholewa.home.model.HouseholdProfile;
 import cloud.cholewa.home.model.MemberPermission;
@@ -43,6 +44,7 @@ public class HouseholdMemberService {
     private final HouseholdMemberMapper householdMemberMapper;
     private final MemberDeviceRepository memberDeviceRepository;
     private final MemberDeviceMapper memberDeviceMapper;
+    private final PushSubscriptionRepository pushSubscriptionRepository;
 
     //two queries for the whole registry (about ten members) instead of one per member
     public Mono<List<HouseholdMember>> getAllHouseholdMembers() {
@@ -132,10 +134,17 @@ public class HouseholdMemberService {
 
     //separate operations rather than a field of the update: active defaults to true in the SDK model,
     //so an update that simply omitted it would reactivate the member
+    //A member switched off keeps no push subscription (HAS-272): nothing is sent to them, and switched
+    //on again they subscribe anew from the application. Cleared after the row is saved - a failure in
+    //between leaves a switched-off member whose subscriptions no read hands out anyway (the read of
+    //notification-service takes active members only)
     private Mono<HouseholdMember> changeActivity(final String name, final boolean active) {
         return findMember(name)
             .map(existing -> householdMemberMapper.withActive(existing, active))
             .flatMap(householdMemberRepository::save)
+            .flatMap(saved -> active
+                ? Mono.just(saved)
+                : pushSubscriptionRepository.deleteAllOfMember(saved.getId()).thenReturn(saved))
             .flatMap(this::withStoredDevices);
     }
 

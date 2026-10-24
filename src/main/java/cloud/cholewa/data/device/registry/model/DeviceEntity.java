@@ -12,6 +12,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 //A row of the device registry - the one table of the devices of the house. The three bindings of
@@ -48,4 +49,14 @@ public class DeviceEntity {
     Boolean positioning;
     //the ids of the opening sensors on the window of blinds (V16) - an array column, never null
     List<Long> openingSensors;
+
+    //the settings of an appliance (V18): all eight filled for the kind APPLIANCE, none for another
+    Integer applianceRunningAboveWatts;
+    Integer applianceIdleBelowWatts;
+    Integer applianceMinRunMinutes;
+    Integer applianceFinishedAfterMinutes;
+    Integer applianceReminderEveryMinutes;
+    Integer applianceMaxReminders;
+    LocalTime applianceQuietFrom;
+    LocalTime applianceQuietTo;
 }

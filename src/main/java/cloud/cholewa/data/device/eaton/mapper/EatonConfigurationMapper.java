@@ -84,7 +84,8 @@ public class EatonConfigurationMapper {
                 device.getLightKind() == LightKind.DIMMER ? SmartDeviceType.DIMMER : SmartDeviceType.LIGHT);
             case PUSH_BUTTON -> Optional.of(SmartDeviceType.PUSH_BUTTON);
             case MOTION_SENSOR -> Optional.of(SmartDeviceType.MOTION_SENSOR);
-            case OPENING_SENSOR, PRESENCE_SENSOR, WEATHER_STATION, BTHOME_GATEWAY -> Optional.empty();
+            //an appliance is a Shelly plug (HAS-272), never a data point of the AMX system
+            case OPENING_SENSOR, PRESENCE_SENSOR, WEATHER_STATION, BTHOME_GATEWAY, APPLIANCE -> Optional.empty();
         };
     }
 
