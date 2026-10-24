@@ -20,9 +20,9 @@ import java.util.Collection;
 @RequiredArgsConstructor
 public class PushSubscriptionRepository {
 
-    private static final String COLUMNS = "id, member_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at";
-
-    //the row keeps its id and the time it was first stored; everything a browser says replaces
+    //the row keeps its id and the time it was first stored; everything a browser says replaces.
+    //Both statements answer the whole row (RETURNING *, ps.*): a column added to the table reaches
+    //the entity in both, with no list of columns to keep in step
     private static final String STORE = """
         INSERT INTO push_subscriptions (member_id, endpoint, p256dh, auth, user_agent, created_at)
         VALUES (:memberId, :endpoint, :p256dh, :auth, :userAgent, :createdAt)
@@ -31,13 +31,13 @@ public class PushSubscriptionRepository {
             p256dh = EXCLUDED.p256dh,
             auth = EXCLUDED.auth,
             user_agent = EXCLUDED.user_agent
-        RETURNING\s""" + COLUMNS;
+        RETURNING *""";
 
     //The names are compared the way the registry keeps them unique - upper() of PostgreSQL on both
     //sides (V10), not a Java toUpperCase, which disagrees for some letters. A switched-off member
     //has none to give, whatever a row says
     private static final String OF_ACTIVE_MEMBERS = """
-        SELECT ps.id, ps.member_id, ps.endpoint, ps.p256dh, ps.auth, ps.user_agent, ps.created_at, ps.last_used_at
+        SELECT ps.*
         FROM push_subscriptions ps
             JOIN household_members m ON m.id = ps.member_id
         WHERE m.active

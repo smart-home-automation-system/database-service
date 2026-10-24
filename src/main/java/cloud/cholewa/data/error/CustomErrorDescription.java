@@ -23,7 +23,8 @@ public enum CustomErrorDescription implements ErrorId {
     NOT_FOUND_DEVICE("Device not found"),
     INVALID_DEVICE("Invalid device"),
     DEVICE_CONFLICT("Device conflict"),
-    NOT_FOUND_DAY_OFF("Day off not found");
+    NOT_FOUND_DAY_OFF("Day off not found"),
+    MEMBER_SWITCHED_OFF("Household member is switched off");
 
     @Getter
     private final String description;

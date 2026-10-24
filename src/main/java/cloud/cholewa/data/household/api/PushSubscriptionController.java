@@ -7,7 +7,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,7 +29,6 @@ import java.util.List;
 //move it below a routed prefix - the tails of the database route are open (see CLAUDE.md)
 @RestController
 @RequiredArgsConstructor
-@EnableConfigurationProperties(HouseholdPushProperties.class)
 public class PushSubscriptionController {
 
     private final PushSubscriptionService pushSubscriptionService;

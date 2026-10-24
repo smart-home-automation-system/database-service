@@ -1,7 +1,7 @@
 package cloud.cholewa.data.household.service;
 
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
-import cloud.cholewa.data.error.InvalidHouseholdMemberException;
+import cloud.cholewa.data.error.MemberSwitchedOffException;
 import cloud.cholewa.data.household.model.HouseholdMemberEntity;
 import cloud.cholewa.data.household.model.PushSubscriptionEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
@@ -107,7 +107,7 @@ class PushSubscriptionServiceTest {
         sut.store("Ola", SUBSCRIPTION)
             .as(StepVerifier::create)
             .expectErrorSatisfies(error -> assertThat(error)
-                .isInstanceOf(InvalidHouseholdMemberException.class)
+                .isInstanceOf(MemberSwitchedOffException.class)
                 .hasMessage("Household member [Ola] is switched off and takes no push subscription"))
             .verify();
 

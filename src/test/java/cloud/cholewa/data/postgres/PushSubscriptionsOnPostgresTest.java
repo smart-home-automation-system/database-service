@@ -98,9 +98,9 @@ class PushSubscriptionsOnPostgresTest extends OnPostgres {
             .extracting(row -> row.get("endpoint"))
             .containsExactly("https://push.example.com/a");
         stored("Jan", subscription("https://push.example.com/b", P256DH, null))
-            .expectStatus().isBadRequest()
+            .expectStatus().isEqualTo(409)
             .expectBody()
-            .jsonPath("$.errors[0].code").isEqualTo("INVALID_HOUSEHOLD_MEMBER");
+            .jsonPath("$.errors[0].code").isEqualTo("MEMBER_SWITCHED_OFF");
 
         webTestClient.delete().uri("/household/member/Anna").exchange().expectStatus().isNoContent();
         assertThat(count()).isZero();

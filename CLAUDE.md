@@ -54,8 +54,13 @@ as the route stands - **with one exception, by the owner's choice (HAS-272)**: `
 /push-subscriptions`, the read of `notification-service` that answers the keys of the browsers,
 lives outside every routed prefix. It is hidden only while no hop resolves a dot segment: the
 ingress and the gateway pass `/household/../push-subscriptions` on as it was sent, and
-`PushSubscriptionControllerTest` pins that this service does not resolve it (404). Never move
-that read below a routed prefix, and look at it again if a hop ever starts normalising paths. Nothing on the gateway is authenticated — the names, phones and MACs of
+`PushSubscriptionControllerTest` pins that Spring's routing here does not resolve it (404). That
+test runs on the mock exchange of `@WebFluxTest`, not on Reactor Netty, so **after every deploy
+that bumps Boot or Reactor Netty, and after the first one of HAS-272**, `GET
+/home/push-subscriptions?members=x` and `/home/household/../push-subscriptions?members=x`
+through the ingress (`curl --path-as-is`) must answer 404 - the only check of the whole path.
+Never move that read below a routed prefix, and look at it again if a hop ever starts normalising
+paths. Nothing on the gateway is authenticated — the names, phones and MACs of
 the household registry, the names, rooms and LAN addresses of the device registry, and the
 writes of both registries and of the calendar are open to whoever reaches the ingress.
 
@@ -203,11 +208,19 @@ writes of both registries and of the calendar are open to whoever reaches the in
     `R2dbcRepository` - the rule of `DayOffRepository`), which keeps the id and `created_at` and
     moves a browser to the member who subscribed last (a shared tablet on another personal link).
   - **A switched-off member keeps none**: `deactivate` deletes them after the row is saved, a
-    `PUT` for such a member is `INVALID_HOUSEHOLD_MEMBER`, and the read takes active members
-    only - so a failure between the save and the delete hands nothing out. A removed member
-    takes them along (`ON DELETE CASCADE`).
+    `PUT` for such a member is `409 MEMBER_SWITCHED_OFF` (a code of its own, for the dashboard to
+    word - not `INVALID_HOUSEHOLD_MEMBER`, which it words as rooms listed twice), and the read
+    takes active members only - so a failure between the save and the delete hands nothing out.
+    A removed member takes them along (`ON DELETE CASCADE`).
+  - **Known limit - a `PUT` racing a `deactivate`** (review of HAS-272, accepted): `store` checks
+    `active` and then upserts, so a `deactivate` between the two leaves one row of a switched-off
+    member. The read hides it; when the member is switched on again, that browser is posted to
+    without subscribing anew. One writer per member makes it rare; the fix, should it matter, is
+    the `active` check inside the statement (`INSERT ... SELECT ... WHERE active`).
   - **The read compares names with PostgreSQL's `upper()` on both sides**, as `V10` keeps them
-    unique - not a Java `toUpperCase`, which disagrees for some letters.
+    unique - not a Java `toUpperCase`, which disagrees for some letters. **Known limit**: the
+    names arrive comma-separated and are matched as sent - a name holding a comma (the registry
+    takes one) cannot be asked for, and a name with a space around it matches nobody.
   - **`DELETE` is idempotent** (204 for nothing to remove; the member must exist) - a browser may
     unsubscribe twice. `last_used_at` is for the sender (HAS-276) and nothing writes it yet;
     neither is there a delete by endpoint alone, which a sender that gets `410 Gone` from a push
@@ -215,9 +228,11 @@ writes of both registries and of the calendar are open to whoever reaches the in
   - **Never log a subscription whole**: the generated `toString` prints the keys. The service
     logs the member and the host of the endpoint. (Logbook still logs the bodies at trace - the
     accepted rule of the organization.)
-  - **The public VAPID key** is `household.push.public-key` (`HouseholdPushProperties`, optional,
-    checked as base64url when set): `GET /household/push-config` answers `{}` without one, so the
-    service deploys before HAS-273 gives the manifest a key.
+  - **The public VAPID key** is `household.push.public-key` (`HouseholdPushProperties`, bound in
+    `HouseholdPushConfig`, optional, checked as base64url when set): `GET /household/push-config`
+    answers `{}` without one, so the service deploys before HAS-273 gives the manifest a key. **In
+    the manifest the variable is `HOUSEHOLD_PUSH_PUBLICKEY`**; a misspelt one binds nothing and the
+    answer stays `{}` with no error anywhere - check `push-config` after the deploy that sets it.
 
 ## Device registry - the parts worth knowing before changing anything
 

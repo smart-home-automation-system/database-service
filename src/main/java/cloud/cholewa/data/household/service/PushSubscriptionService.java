@@ -1,7 +1,7 @@
 package cloud.cholewa.data.household.service;
 
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
-import cloud.cholewa.data.error.InvalidHouseholdMemberException;
+import cloud.cholewa.data.error.MemberSwitchedOffException;
 import cloud.cholewa.data.household.model.HouseholdMemberEntity;
 import cloud.cholewa.data.household.model.PushSubscriptionEntity;
 import cloud.cholewa.data.household.repository.HouseholdMemberRepository;
@@ -36,7 +36,7 @@ public class PushSubscriptionService {
     public Mono<PushSubscription> store(final String memberName, final PushSubscription subscription) {
         return findMember(memberName)
             .filter(HouseholdMemberEntity::isActive)
-            .switchIfEmpty(Mono.error(() -> new InvalidHouseholdMemberException(
+            .switchIfEmpty(Mono.error(() -> new MemberSwitchedOffException(
                 "Household member [" + memberName + "] is switched off and takes no push subscription")))
             .map(member -> toEntity(member.getId(), subscription))
             .flatMap(pushSubscriptionRepository::store)

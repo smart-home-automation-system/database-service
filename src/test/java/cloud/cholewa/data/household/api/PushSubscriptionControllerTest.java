@@ -2,7 +2,8 @@ package cloud.cholewa.data.household.api;
 
 import cloud.cholewa.data.config.ExceptionHandlerConfig;
 import cloud.cholewa.data.error.HouseholdMemberNotFoundException;
-import cloud.cholewa.data.error.InvalidHouseholdMemberException;
+import cloud.cholewa.data.error.MemberSwitchedOffException;
+import cloud.cholewa.data.household.config.HouseholdPushConfig;
 import cloud.cholewa.data.household.service.PushSubscriptionService;
 import cloud.cholewa.home.model.PushSubscription;
 import cloud.cholewa.home.model.PushSubscriptionKeys;
@@ -30,7 +31,7 @@ import static org.mockito.Mockito.when;
 
 //The push subscriptions of the household (HAS-272) through the real Jackson, the real validation and
 //the real error mapping of the service
-@Import(ExceptionHandlerConfig.class)
+@Import({ExceptionHandlerConfig.class, HouseholdPushConfig.class})
 @WebFluxTest(controllers = PushSubscriptionController.class, properties = "household.push.public-key=" + PushSubscriptionControllerTest.PUBLIC_KEY)
 class PushSubscriptionControllerTest {
 
@@ -118,18 +119,18 @@ class PushSubscriptionControllerTest {
     }
 
     @Test
-    void should_refuse_a_subscription_of_a_member_who_is_switched_off() {
+    void should_answer_409_for_a_subscription_of_a_member_who_is_switched_off() {
         when(pushSubscriptionService.store(eq("Ola"), any()))
-            .thenReturn(Mono.error(new InvalidHouseholdMemberException("Household member [Ola] is switched off")));
+            .thenReturn(Mono.error(new MemberSwitchedOffException("Household member [Ola] is switched off")));
 
         webTestClient.put()
             .uri("/household/member/Ola/push-subscriptions")
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(STORED)
             .exchange()
-            .expectStatus().isBadRequest()
+            .expectStatus().isEqualTo(409)
             .expectBody()
-            .jsonPath("$.errors[0].code").isEqualTo("INVALID_HOUSEHOLD_MEMBER");
+            .jsonPath("$.errors[0].code").isEqualTo("MEMBER_SWITCHED_OFF");
     }
 
     @Test
