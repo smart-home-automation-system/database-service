@@ -27,7 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -137,6 +139,23 @@ class PushSubscriptionServiceTest {
             .verify();
 
         verify(pushSubscriptionRepository, never()).deleteOfMember(anyLong(), any());
+    }
+
+    //a dead endpoint is removed whoever it belonged to; two messages may find it, so nothing to remove
+    //is no error (HAS-276)
+    @Test
+    void should_remove_a_dead_subscription_by_its_endpoint_and_take_none_as_done() {
+        when(pushSubscriptionRepository.deleteByEndpoint(ENDPOINT)).thenReturn(Mono.just(1L), Mono.just(0L));
+
+        sut.removeByEndpoint(ENDPOINT)
+            .as(StepVerifier::create)
+            .verifyComplete();
+        sut.removeByEndpoint(ENDPOINT)
+            .as(StepVerifier::create)
+            .verifyComplete();
+
+        verify(pushSubscriptionRepository, times(2)).deleteByEndpoint(ENDPOINT);
+        verifyNoInteractions(householdMemberRepository);
     }
 
     @Test

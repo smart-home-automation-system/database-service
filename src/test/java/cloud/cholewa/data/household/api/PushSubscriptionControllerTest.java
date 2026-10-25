@@ -155,6 +155,51 @@ class PushSubscriptionControllerTest {
         verifyNoInteractions(pushSubscriptionService);
     }
 
+    //notification-service removes an endpoint its push service gave up on (HAS-276) - by the endpoint
+    //alone; 204 whether it was there or not
+    @Test
+    void should_remove_a_dead_subscription_by_its_endpoint_alone() {
+        when(pushSubscriptionService.removeByEndpoint(ENDPOINT)).thenReturn(Mono.empty());
+
+        webTestClient.delete()
+            .uri(uri -> uri.path("/push-subscriptions").queryParam("endpoint", ENDPOINT).build())
+            .exchange()
+            .expectStatus().isNoContent();
+
+        verify(pushSubscriptionService).removeByEndpoint(ENDPOINT);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " "})
+    void should_refuse_a_removal_of_a_dead_subscription_without_an_endpoint(final String endpoint) {
+        webTestClient.delete()
+            .uri(uri -> uri.path("/push-subscriptions").queryParam("endpoint", endpoint).build())
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        verifyNoInteractions(pushSubscriptionService);
+    }
+
+    @Test
+    void should_refuse_a_removal_of_a_dead_subscription_with_no_endpoint_parameter() {
+        webTestClient.delete()
+            .uri("/push-subscriptions")
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        verifyNoInteractions(pushSubscriptionService);
+    }
+
+    @Test
+    void should_not_reach_the_removal_of_notification_service_through_a_dot_segment_below_a_routed_prefix() {
+        webTestClient.delete()
+            .uri(java.net.URI.create("/household/../push-subscriptions?endpoint=" + ENDPOINT))
+            .exchange()
+            .expectStatus().isNotFound();
+
+        verifyNoInteractions(pushSubscriptionService);
+    }
+
     //the read of notification-service: the names as a list, the keys in the answer
     @Test
     void should_answer_the_subscriptions_of_the_named_members() {

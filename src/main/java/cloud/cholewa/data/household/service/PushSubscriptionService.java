@@ -54,6 +54,16 @@ public class PushSubscriptionService {
             .then();
     }
 
+    //The removal of notification-service (HAS-276): a push service answered 404 or 410 for the endpoint, so
+    //the browser is gone for good - whoever it belonged to, which the sender does not know. Nothing to
+    //remove is no error: two messages may find the same dead endpoint
+    public Mono<Void> removeByEndpoint(final String endpoint) {
+        return pushSubscriptionRepository.deleteByEndpoint(endpoint)
+            .doOnNext(removed -> log.info("Removed {} push subscription(s) on [{}] the push service gave up",
+                removed, hostOf(endpoint)))
+            .then();
+    }
+
     //The read of notification-service: the subscriptions of the named members who are switched on, a
     //name the registry does not know names nobody. In the order they were stored (the query's)
     public Mono<List<PushSubscription>> ofMembers(final List<String> memberNames) {
