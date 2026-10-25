@@ -122,6 +122,20 @@ class PushSubscriptionsOnPostgresTest extends OnPostgres {
             .containsExactly("https://push.example.com/b");
     }
 
+    //the removal of notification-service (HAS-276): by the endpoint alone, whoever it belonged to
+    @Test
+    void should_remove_a_dead_subscription_by_its_endpoint_alone() {
+        stored("Anna", subscription("https://push.example.com/a", P256DH, null)).expectStatus().isOk();
+        stored("Jan", subscription("https://push.example.com/b", P256DH, null)).expectStatus().isOk();
+
+        removedByEndpoint("https://push.example.com/a");
+        removedByEndpoint("https://push.example.com/a");
+
+        assertThat(rows("SELECT endpoint FROM push_subscriptions"))
+            .extracting(row -> row.get("endpoint"))
+            .containsExactly("https://push.example.com/b");
+    }
+
     //no key in the configuration of the tests: the application is told there is none
     @Test
     void should_answer_no_public_key_when_none_is_configured() {
@@ -176,6 +190,13 @@ class PushSubscriptionsOnPostgresTest extends OnPostgres {
         webTestClient.delete()
             .uri(uri -> uri.path("/household/member/{name}/push-subscriptions").queryParam("endpoint", endpoint)
                 .build(member))
+            .exchange()
+            .expectStatus().isNoContent();
+    }
+
+    private void removedByEndpoint(final String endpoint) {
+        webTestClient.delete()
+            .uri(uri -> uri.path("/push-subscriptions").queryParam("endpoint", endpoint).build())
             .exchange()
             .expectStatus().isNoContent();
     }

@@ -223,8 +223,11 @@ writes of both registries and of the calendar are open to whoever reaches the in
     takes one) cannot be asked for, and a name with a space around it matches nobody.
   - **`DELETE` is idempotent** (204 for nothing to remove; the member must exist) - a browser may
     unsubscribe twice. `last_used_at` is for the sender (HAS-276) and nothing writes it yet;
-    neither is there a delete by endpoint alone, which a sender that gets `410 Gone` from a push
-    service will want - its task adds it.
+    the delete by the endpoint alone is `DELETE /push-subscriptions?endpoint=` (HAS-276, 0.19.0),
+    outside the routed prefixes like the read: `notification-service` calls it when a push service
+    answers 404 or 410 - it does not know the member, the read gives none. `removeByEndpoint`
+    logs the host only, and `PushSubscriptionControllerTest` pins that `/household/../` does not reach
+    it either.
   - **Never log a subscription whole**: the generated `toString` prints the keys. The service
     logs the member and the host of the endpoint. (Logbook still logs the bodies at trace - the
     accepted rule of the organization.)
@@ -587,7 +590,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `<dependencyManagement>` is gone since logbook 4.2.0 (with Boot 4.1.1, HAS-145), which
   declares the version JUnit 6 does; should the two disagree again, pin it — do not exclude it.
 - logbook needs the optional `spring-boot-http-client` module on Boot 4.1 (already declared).
-- **`cholewa-commons` 1.11.0** (HAS-272, from 1.9.0): Logbook runs as a WebFilter in the reactive
+- **`cholewa-commons` 1.12.0** (HAS-276; 1.11.0 since HAS-272, from 1.9.0; 1.12.0 adds the household publisher, not used here): Logbook runs as a WebFilter in the reactive
   chain, so its lines carry the `traceId` (1.10.0), and the actuator is left out of its log
   (1.10.1). This service has no `WebClient`, no own `LogbookClientHandler` and no `@Scheduled`
   task, so nothing else of 1.10.0 / 1.11.0 applies here.

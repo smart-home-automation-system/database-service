@@ -59,6 +59,17 @@ public class PushSubscriptionController {
             .then(Mono.just(ResponseEntity.noContent().build()));
     }
 
+    //inside the cluster only (not routed): notification-service removes a subscription its push service
+    //answered 404 or 410 for (HAS-276) - by the endpoint alone, since the read gives no member. 204 also
+    //when it was gone already
+    @DeleteMapping("/push-subscriptions")
+    Mono<ResponseEntity<Void>> removeDeadPushSubscription(
+        @RequestParam @NotBlank @Size(max = 2000) final String endpoint
+    ) {
+        return pushSubscriptionService.removeByEndpoint(endpoint)
+            .then(Mono.just(ResponseEntity.noContent().build()));
+    }
+
     //inside the cluster only (not routed): the subscriptions of the named members who are switched on,
     //keys included - what notification-service posts the household messages to
     @GetMapping("/push-subscriptions")

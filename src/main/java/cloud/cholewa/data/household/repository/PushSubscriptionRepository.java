@@ -77,6 +77,12 @@ public class PushSubscriptionRepository {
         );
     }
 
+    //the number of rows that went - an endpoint is one row at most (push_subscriptions_endpoint_uq), and none
+    //when it was removed already
+    public Mono<Long> deleteByEndpoint(final String endpoint) {
+        return template.delete(Query.query(Criteria.where("endpoint").is(endpoint)), PushSubscriptionEntity.class);
+    }
+
     public Mono<Long> deleteAllOfMember(final Long memberId) {
         return template.delete(Query.query(Criteria.where("member_id").is(memberId)), PushSubscriptionEntity.class);
     }
