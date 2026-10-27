@@ -43,6 +43,16 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
 
     private static final String APPLIANCE = PLUG + ", \"appliance\": " + SETTINGS + "}";
 
+    private static final String SOLAX = """
+        {"name": "Inverter", "room": "boiler", "kind": "inverter", "vendor": "other", "enabled": true,
+         "inverter": {"brand": "solax", "serialNumber": "H1234567890ABC", "address": "192.0.2.120",
+                      "registrationNumber": "SABCDEFGHI", "batterySerialNumber": "B1234567890ABC"}}""";
+
+    private static final String SOFAR = """
+        {"name": "Inverter", "room": "garage", "kind": "inverter", "vendor": "other", "enabled": true,
+         "inverter": {"brand": "sofar", "serialNumber": "S1234567890ABCDEF", "address": "192.0.2.121",
+                      "loggerSerial": 1234567890}}""";
+
     @Autowired
     private WebTestClient webTestClient;
 
@@ -157,9 +167,9 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             "A Shelly of generation 2 needs its deviceId - the id it reports under over MQTT");
         invalid("""
                 {"name": "Nowhere", "room": "office", "kind": "light", "vendor": "shelly", "enabled": true}""",
-            "A device is reached through exactly one binding - shelly, eaton or bthome - and this one has none");
+            "A device is reached through exactly one binding - shelly, eaton, bthome or inverter - and this one has none");
         invalid(SHELLY_BLINDS.replace("\"placement\"", "\"bthome\": {\"address\": \"7c:c6:b6:00:00:02\"}, \"placement\""),
-            "A device is reached through exactly one binding - shelly, eaton or bthome - and this one has shelly and bthome");
+            "A device is reached through exactly one binding - shelly, eaton, bthome or inverter - and this one has shelly and bthome");
         //HAS-260: the model takes 0 to 299, the registry an output or the zone of a presence sensor
         invalid(SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 4"),
             "The channel of a Shelly is an output (0 to 3) or the zone of a presence sensor (200 to 299), not 4");
@@ -579,6 +589,104 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             VALUES (now(), 'Dishwasher', 'KITCHEN', 'APPLIANCE', 'SHELLY', true, '192.0.2.64', 1,
                 20, 3, 5, 10, 30, 4, '22:00:30', '07:00')"""))
             .hasMessageContaining("devices_appliance_range");
+
+        assertThat(count()).isZero();
+    }
+
+    //An inverter (HAS-326): its binding becomes the six columns of V20 and is answered as it was sent;
+    //found by its kind, which is how energy-service will read it
+    @Test
+    void should_register_an_inverter_with_its_binding_and_answer_it_as_it_was_sent() {
+        final long inverter = added(SOLAX);
+
+        assertThat(stored(inverter))
+            .containsEntry("kind", "INVERTER")
+            .containsEntry("vendor", "OTHER")
+            .containsEntry("inverter_brand", "SOLAX")
+            .containsEntry("inverter_serial_number", "H1234567890ABC")
+            .containsEntry("inverter_address", "192.0.2.120")
+            .containsEntry("inverter_registration_number", "SABCDEFGHI")
+            .containsEntry("inverter_logger_serial", null)
+            .containsEntry("inverter_battery_serial_number", "B1234567890ABC")
+            .containsEntry("shelly_address", null);
+
+        webTestClient.get()
+            .uri("/device/registry?kind=inverter")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.length()").isEqualTo(1)
+            .jsonPath("$[0].id").isEqualTo(inverter)
+            .jsonPath("$[0].kind").isEqualTo("inverter")
+            .jsonPath("$[0].inverter.brand").isEqualTo("solax")
+            .jsonPath("$[0].inverter.serialNumber").isEqualTo("H1234567890ABC")
+            .jsonPath("$[0].inverter.registrationNumber").isEqualTo("SABCDEFGHI")
+            .jsonPath("$[0].inverter.loggerSerial").doesNotExist()
+            .jsonPath("$[0].shelly").doesNotExist();
+    }
+
+    //the logger serial is four bytes: the largest of them is stored and answered whole
+    @Test
+    void should_register_a_sofar_with_the_largest_logger_serial() {
+        final long inverter = added(SOFAR.replace("1234567890", "4294967295"));
+
+        assertThat(stored(inverter)).containsEntry("inverter_logger_serial", 4294967295L);
+        webTestClient.get()
+            .uri("/device/registry/{id}", inverter)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.inverter.loggerSerial").isEqualTo(4294967295L);
+    }
+
+    //the serial number is the identity of an inverter: a second one is refused by the index of V20
+    @Test
+    void should_refuse_an_inverter_registered_twice_by_its_serial_number() {
+        added(SOLAX);
+
+        conflict(SOLAX.replace("\"name\": \"Inverter\"", "\"name\": \"Inverter again\""),
+            "A device is already registered for the inverter with the serial number [H1234567890ABC]");
+    }
+
+    //refused in words by DeviceRules, before any CHECK of V20 answers with its name
+    @Test
+    void should_refuse_an_inverter_the_registry_does_not_take_and_say_why() {
+        invalid(SOLAX.replace("\"vendor\": \"other\"", "\"vendor\": \"shelly\""),
+            "A device of the vendor [shelly] is not reached through the binding [inverter]");
+        invalid(SOFAR.replace("\"loggerSerial\": 1234567890", "\"registrationNumber\": \"SABCDEFGHI\""),
+            "registrationNumber is the one of a SolaX dongle, not of an inverter of the brand [sofar]");
+        invalid(BTHOME_WEATHER.replace("\"bthome\": {\"address\": \"7c:c6:b6:00:00:01\"}",
+                "\"inverter\": {\"brand\": \"solax\", \"serialNumber\": \"H1234567890ABC\"}"),
+            "A device of the kind [weather station] is not reached through the binding [inverter], only through: bthome");
+
+        assertThat(count()).isZero();
+    }
+
+    //the schema keeps the binding to inverters of no named vendor and to the fields of its brand, for a
+    //row written past the API
+    @Test
+    void should_refuse_an_inverter_binding_the_schema_does_not_take() {
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation)
+            VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'SHELLY', true, '192.0.2.120', 1)"""))
+            .hasMessageContaining("devices_inverter_of_inverters");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, inverter_brand, inverter_serial_number)
+            VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'SHELLY', true, 'SOLAX', 'H1234567890ABC')"""))
+            .hasMessageContaining("devices_inverter_vendor");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, inverter_brand, inverter_serial_number,
+                inverter_logger_serial)
+            VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'OTHER', true, 'SOLAX', 'H1234567890ABC', 1234567890)"""))
+            .hasMessageContaining("devices_inverter_brand_fields");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, inverter_brand, inverter_serial_number)
+            VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'OTHER', true, 'SOLAX', 'h1234567890abc')"""))
+            .hasMessageContaining("devices_inverter_format");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, inverter_serial_number)
+            VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'OTHER', true, 'H1234567890ABC')"""))
+            .hasMessageContaining("devices_inverter_binding_whole");
 
         assertThat(count()).isZero();
     }

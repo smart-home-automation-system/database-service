@@ -3,6 +3,7 @@ package cloud.cholewa.data.device.registry.model;
 import cloud.cholewa.home.model.BlindsPlacement;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonGatewayType;
+import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.LightKind;
 import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.SmartVendor;
@@ -15,9 +16,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
-//A row of the device registry - the one table of the devices of the house. The three bindings of
-//the SDK model (shelly, eaton, bthome) are columns of the one row here - exactly one of them is
-//filled, which the schema checks (V13). What may not be null is said there as well: nothing
+//A row of the device registry - the one table of the devices of the house. The four bindings of
+//the SDK model (shelly, eaton, bthome, inverter) are columns of the one row here - exactly one of
+//them is filled, which the schema checks (V13, V20). What may not be null is said there as well: nothing
 //validates an entity, so an annotation here would promise what no code keeps.
 @Value
 @Builder(toBuilder = true)
@@ -59,4 +60,13 @@ public class DeviceEntity {
     Integer applianceMaxReminders;
     LocalTime applianceQuietFrom;
     LocalTime applianceQuietTo;
+
+    //the inverter binding (V20): the brand and the serial number filled for the kind INVERTER, none
+    //of the six for another
+    InverterBrand inverterBrand;
+    String inverterSerialNumber;
+    String inverterAddress;
+    String inverterRegistrationNumber;
+    Long inverterLoggerSerial;
+    String inverterBatterySerialNumber;
 }

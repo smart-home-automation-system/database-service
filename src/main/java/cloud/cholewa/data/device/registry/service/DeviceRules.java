@@ -3,6 +3,8 @@ package cloud.cholewa.data.device.registry.service;
 import cloud.cholewa.data.error.InvalidDeviceException;
 import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.DeviceKind;
+import cloud.cholewa.home.model.InverterBinding;
+import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.SmartDevice;
 import cloud.cholewa.home.model.SmartVendor;
 import lombok.AccessLevel;
@@ -17,7 +19,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-//What the SDK model leaves open: its three bindings and the three fields of one kind only are all
+//What the SDK model leaves open: its four bindings and the fields of one kind only are all
 //optional, and nothing in it ties them to the vendor and the kind of the device. The registry
 //does, here, before a device is stored - the schema (V13) repeats what one row can say of it, and
 //would answer with the name of a constraint where this answers in words.
@@ -36,9 +38,11 @@ final class DeviceRules {
         final DeviceKind kind = device.getKind();
 
         //an Eaton device is reached through a gateway of the AMX system and nothing else is; the
-        //binding of a Shelly is a Shelly's. A Bluetooth sensor is of any vendor but Eaton
+        //binding of a Shelly is a Shelly's. A Bluetooth sensor is of any vendor but Eaton; an
+        //inverter is of none of the vendors the registry names (HAS-326)
         if ((vendor == SmartVendor.EATON) != (binding == Binding.EATON)
-            || (binding == Binding.SHELLY && vendor != SmartVendor.SHELLY)) {
+            || (binding == Binding.SHELLY && vendor != SmartVendor.SHELLY)
+            || (binding == Binding.INVERTER && vendor != SmartVendor.OTHER)) {
             throw new InvalidDeviceException(
                 "A device of the vendor [" + vendor.getValue() + "] is not reached through the binding [" + binding + "]");
         }
@@ -81,6 +85,28 @@ final class DeviceRules {
 
         checkOpeningSensors(device);
         checkAppliance(device);
+        checkInverter(device);
+    }
+
+    //The part of an inverter (HAS-326) is its binding, so one of the kind inverter has it and no
+    //other device does - bindingsOf says both. Here: what belongs to one brand stays with it. The
+    //registration number is the SolaX dongle's, the logger serial the Solarman logger's of a SOFAR;
+    //neither is asked for - "not known" is an answer the model allows. The schema repeats it (V20)
+    private static void checkInverter(final SmartDevice device) {
+        final InverterBinding inverter = device.getInverter();
+        if (inverter == null || inverter.getBrand() == null) {
+            return;
+        }
+        if (inverter.getBrand() != InverterBrand.SOLAX && inverter.getRegistrationNumber() != null) {
+            throw new InvalidDeviceException(
+                "registrationNumber is the one of a SolaX dongle, not of an inverter of the brand ["
+                    + inverter.getBrand().getValue() + "]");
+        }
+        if (inverter.getBrand() != InverterBrand.SOFAR && inverter.getLoggerSerial() != null) {
+            throw new InvalidDeviceException(
+                "loggerSerial is the one of the Solarman logger of a SOFAR, not of an inverter of the brand ["
+                    + inverter.getBrand().getValue() + "]");
+        }
     }
 
     //The settings of an appliance (HAS-272): there for the kind appliance and for nothing else - an
@@ -157,9 +183,12 @@ final class DeviceRules {
         if (device.getBthome() != null) {
             given.add(Binding.BTHOME);
         }
+        if (device.getInverter() != null) {
+            given.add(Binding.INVERTER);
+        }
         if (given.size() != 1) {
             throw new InvalidDeviceException(
-                "A device is reached through exactly one binding - shelly, eaton or bthome - and this one has "
+                "A device is reached through exactly one binding - shelly, eaton, bthome or inverter - and this one has "
                     + (given.isEmpty() ? "none" : given.stream().map(Binding::toString).collect(Collectors.joining(" and "))));
         }
         return given.getFirst();
@@ -174,17 +203,21 @@ final class DeviceRules {
     private static Set<Binding> bindingsOf(final DeviceKind kind) {
         return switch (kind) {
             case BLINDS, LIGHT, PUSH_BUTTON -> EnumSet.of(Binding.SHELLY, Binding.EATON);
-            case OPENING_SENSOR, MOTION_SENSOR, PRESENCE_SENSOR, TEMPERATURE_SENSOR -> EnumSet.allOf(Binding.class);
+            case OPENING_SENSOR, MOTION_SENSOR, PRESENCE_SENSOR, TEMPERATURE_SENSOR ->
+                EnumSet.of(Binding.SHELLY, Binding.EATON, Binding.BTHOME);
             case WEATHER_STATION -> EnumSet.of(Binding.BTHOME);
             case BTHOME_GATEWAY -> EnumSet.of(Binding.SHELLY);
             //an appliance is watched through the Shelly plug it runs on (HAS-272)
             case APPLIANCE -> EnumSet.of(Binding.SHELLY);
+            //an inverter is read by energy-service through its dongle, its logger or a cloud, and
+            //is known by its serial number - the inverter part is its binding (HAS-326)
+            case INVERTER -> EnumSet.of(Binding.INVERTER);
         };
     }
 
     //named as the fields of the model are
     private enum Binding {
-        SHELLY, EATON, BTHOME;
+        SHELLY, EATON, BTHOME, INVERTER;
 
         @Override
         public String toString() {

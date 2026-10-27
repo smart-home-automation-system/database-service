@@ -117,8 +117,8 @@ point.
 
 What a reader can rely on:
 
-- **A device has exactly one binding** - `shelly`, `eaton` or `bthome` - and the other two are
-  not in the JSON at all (not `null`, not `{}`). The schema guarantees the one.
+- **A device has exactly one binding** - `shelly`, `eaton`, `bthome` or (since 0.20.0) `inverter` -
+  and the others are not in the JSON at all (not `null`, not `{}`). The schema guarantees the one.
 - **The fields of one kind only** (`lightKind`, `placement`, `positioning`) are left out when
   the row has none; a missing `positioning` is "not known", never `false`.
 - **`openingSensors` of blinds** (since 0.16.0, SDK 1.11.0, HAS-290) are the ids of the opening
@@ -150,6 +150,20 @@ What a reader can rely on:
   local time of the house, `HH:mm`. **A reader of every kind has to know the kind first**: a
   client on an SDK before 1.13.0 that reads the registry without `?kind=` (the dashboard) fails on
   it, so no appliance is registered before such a reader moved.
+- **An `inverter`** (since 0.20.0, SDK 1.15.0, HAS-326) is a photovoltaic inverter read by
+  `energy-service`, of the vendor `other`, reached by its `inverter` binding alone - the brand, the
+  serial number (one device per serial number), what answers for it on the network and the numbers of
+  one brand:
+
+  ```json
+  {"id": 120, "name": "Inverter", "room": "boiler", "kind": "inverter", "enabled": true, "vendor": "other",
+   "inverter": {"brand": "solax", "serialNumber": "H1234567890ABC", "address": "192.0.2.120",
+                "registrationNumber": "SABCDEFGHI", "batterySerialNumber": "B1234567890ABC"}}
+  ```
+
+  `registrationNumber` is the one of a SolaX dongle, `loggerSerial` the one of the Solarman logger of a
+  SOFAR. **The release before 0.20.0 cannot read an inverter**: once one is stored, a rollback answers
+  `500` for every read of the whole registry (a read by another kind still works).
 - **A device of the Eaton configuration has a name the registry gave it** - its room, its
   kind and its point (`Living room temperature sensor 45`) - because a configuration has none.
 - A device is addressed by `id` here, unlike a member of the household (by name): it has no
@@ -171,6 +185,7 @@ What a writer has to know:
     | `weather station` | `bthome` |
     | `bthome gateway` | `shelly` |
     | `appliance` (since 0.18.0) | `shelly` - the plug the appliance runs on |
+    | `inverter` (since 0.20.0) | `inverter` - and the `inverter` binding is of this kind alone |
 
   - a Shelly channel is an output, 0 to 3, of any kind - or a zone, 200 to 299 (`presencezone:200`),
     of a `presence sensor` alone (since 0.17.0, HAS-260);
@@ -184,10 +199,13 @@ What a writer has to know:
     `details`. An id below 1 fails the model (`400` without a code);
   - `appliance` (since 0.18.0, SDK 1.13.0, HAS-272) on an `appliance` and on nothing else, and an
     `appliance` always with it - its eight settings, each required and bounded by the model
-    (`400` without a code), and `idleBelowWatts` below `runningAboveWatts`.
+    (`400` without a code), and `idleBelowWatts` below `runningAboveWatts`;
+  - an `inverter` binding (since 0.20.0, SDK 1.15.0, HAS-326) is of the vendor `other`;
+    `registrationNumber` only for the brand `solax`, `loggerSerial` only for `sofar`. Neither is
+    required, nor is `address`.
 - **A binding is one device** - `409` with the code `DEVICE_CONFLICT`, and `details` names
   what is taken: a channel of a Shelly by its address, a channel of a Shelly by its MQTT id,
-  a point of an Eaton gateway, a Bluetooth address. A Shelly without a channel is one device
+  a point of an Eaton gateway, a Bluetooth address, the serial number of an inverter. A Shelly without a channel is one device
   as a whole, next to which its channels may still be registered.
 - **`PUT` is the whole device, not a patch.** Send everything the device should be; a client
   that edits a device reads it, changes it and sends it back. There is no partial update: the
@@ -340,7 +358,7 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
-| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts` |
+| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts`, an `inverter` binding of a named vendor or with a number of the other brand |
 | `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry; or the device is an opening sensor that blinds still name, and cannot be removed |
 | `NOT_FOUND_DAY_OFF` | 404 | the household added no day off on that date - a holiday and a weekend are days off without being stored |
 
@@ -397,6 +415,15 @@ does not know: the value fails while the body is read, and the answer is a `400`
   (base64url of the lengths a browser gives), `user_agent`, `created_at`, and `last_used_at`
   for the sender to come (HAS-276), empty until then. A table of its own, never a column of
   `household_members`.
+- **Inverters** (`V20`, HAS-326): the inverter binding as six nullable columns of `devices`,
+  `inverter_brand`, `inverter_serial_number`, `inverter_address`, `inverter_registration_number`,
+  `inverter_logger_serial` (`BIGINT`) and `inverter_battery_serial_number`, told by the serial
+  number - `devices_one_binding` counts four bindings since. The binding is whole or absent
+  (`devices_inverter_binding_whole`), there exactly when the kind is `INVERTER`
+  (`devices_inverter_of_inverters`), of the vendor `OTHER` (`devices_inverter_vendor`), the numbers of
+  one brand with that brand (`devices_inverter_brand_fields`), within the bounds of the SDK
+  (`devices_inverter_format`); an inverter by its serial number once
+  (`devices_inverter_serial_number_uq`).
 - **Household registry** (`V8`–`V10`): `household_members` (`name` unique ignoring letter case
   since `V10`, `phone` unique, phone
   checked to be E.164 since `V9` — `V8` stored `xxx-xxx-xxx` and `V9` converted the existing

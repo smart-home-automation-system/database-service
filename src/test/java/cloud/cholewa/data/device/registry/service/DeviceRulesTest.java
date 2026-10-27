@@ -7,6 +7,8 @@ import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
+import cloud.cholewa.home.model.InverterBinding;
+import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.LightKind;
 import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.ShellyBinding;
@@ -32,6 +34,9 @@ class DeviceRulesTest {
     private static final EatonBinding EATON = EatonBinding.builder().gateway(EatonGatewayType.LIGHTS).point(44).build();
     private static final BthomeBinding BTHOME = BthomeBinding.builder().address("7c:c6:b6:00:00:01").build();
     private static final ApplianceSettings APPLIANCE = appliance().build();
+    private static final InverterBinding INVERTER = InverterBinding.builder()
+        .brand(InverterBrand.SOLAX).serialNumber("H1234567890ABC").address("192.0.2.120")
+        .registrationNumber("SABCDEFGHI").batterySerialNumber("B1234567890ABC").build();
 
     //every pair of a kind and a binding the house may have, with the vendor the binding is of
     @ParameterizedTest
@@ -116,7 +121,7 @@ class DeviceRulesTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY", "APPLIANCE"},
+    @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY", "APPLIANCE", "INVERTER"},
         mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_way_a_light_is_driven_on_anything_but_a_light(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.EATON, "eaton").lightKind(LightKind.DIMMER).build();
@@ -254,8 +259,13 @@ class DeviceRulesTest {
     @ParameterizedTest
     @EnumSource(value = DeviceKind.class, names = "BLINDS", mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_opening_sensors_on_anything_but_blinds(final DeviceKind kind) {
-        final String binding = kind == DeviceKind.WEATHER_STATION ? "bthome" : "shelly";
-        final SmartDevice device = device(kind, SmartVendor.SHELLY, binding).openingSensors(List.of(31L)).build();
+        final String binding = switch (kind) {
+            case WEATHER_STATION -> "bthome";
+            case INVERTER -> "inverter";
+            default -> "shelly";
+        };
+        final SmartVendor vendor = kind == DeviceKind.INVERTER ? SmartVendor.OTHER : SmartVendor.SHELLY;
+        final SmartDevice device = device(kind, vendor, binding).openingSensors(List.of(31L)).build();
 
         assertThatThrownBy(() -> DeviceRules.check(device))
             .isInstanceOf(InvalidDeviceException.class)
@@ -313,7 +323,7 @@ class DeviceRulesTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DeviceKind.class, names = {"APPLIANCE", "WEATHER_STATION"}, mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = DeviceKind.class, names = {"APPLIANCE", "WEATHER_STATION", "INVERTER"}, mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_settings_of_an_appliance_on_another_kind(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.SHELLY, "shelly").appliance(APPLIANCE).build();
 
@@ -344,6 +354,93 @@ class DeviceRulesTest {
         assertThatCode(() -> DeviceRules.check(plug)).doesNotThrowAnyException();
     }
 
+    //An inverter (HAS-326) is known by its own binding, of no vendor the registry names
+    @ParameterizedTest
+    @EnumSource(InverterBrand.class)
+    void should_take_an_inverter_of_either_brand_with_only_its_brand_and_serial_number(final InverterBrand brand) {
+        final SmartDevice inverter = device(DeviceKind.INVERTER, SmartVendor.OTHER, "inverter")
+            .inverter(InverterBinding.builder().brand(brand).serialNumber("H1234567890ABC").build()).build();
+
+        assertThatCode(() -> DeviceRules.check(inverter)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void should_take_each_brand_with_the_fields_of_its_own() {
+        assertThatCode(() -> {
+            DeviceRules.check(device(DeviceKind.INVERTER, SmartVendor.OTHER, "inverter").build());
+            DeviceRules.check(device(DeviceKind.INVERTER, SmartVendor.OTHER, "")
+                .inverter(InverterBinding.builder().brand(InverterBrand.SOFAR).serialNumber("S1234567890ABCDEF")
+                    .address("192.0.2.121").loggerSerial(1234567890L).build())
+                .build());
+        }).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SmartVendor.class, names = "OTHER", mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_an_inverter_of_a_named_vendor(final SmartVendor vendor) {
+        final SmartDevice inverter = device(DeviceKind.INVERTER, vendor, "inverter").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(inverter))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the vendor [" + vendor.getValue() + "] is not reached through the binding [inverter]");
+    }
+
+    //the inverter is its binding: no Shelly, Eaton or Bluetooth device of the kind, and no other kind with it
+    @ParameterizedTest
+    @CsvSource({"SHELLY, shelly", "EATON, eaton", "OTHER, bthome"})
+    void should_refuse_an_inverter_reached_through_another_binding(final SmartVendor vendor, final String binding) {
+        final SmartDevice inverter = device(DeviceKind.INVERTER, vendor, binding).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(inverter))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the kind [inverter] is not reached through the binding [" + binding
+                + "], only through: inverter");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = "INVERTER", mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_the_inverter_binding_on_another_kind(final DeviceKind kind) {
+        final SmartDevice device = device(kind, SmartVendor.OTHER, "inverter").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessageStartingWith("A device of the kind [" + kind.getValue() + "] is not reached through the binding [inverter]");
+    }
+
+    @Test
+    void should_refuse_an_inverter_with_a_second_binding_and_name_both() {
+        final SmartDevice inverter = device(DeviceKind.INVERTER, SmartVendor.OTHER, "inverter").bthome(BTHOME).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(inverter))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome or inverter - and this one"
+                + " has bthome and inverter");
+    }
+
+    @Test
+    void should_refuse_the_registration_number_of_a_solax_dongle_on_a_sofar() {
+        final SmartDevice inverter = device(DeviceKind.INVERTER, SmartVendor.OTHER, "")
+            .inverter(InverterBinding.builder().brand(InverterBrand.SOFAR).serialNumber("S1234567890ABCDEF")
+                .registrationNumber("SABCDEFGHI").build())
+            .build();
+
+        assertThatThrownBy(() -> DeviceRules.check(inverter))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("registrationNumber is the one of a SolaX dongle, not of an inverter of the brand [sofar]");
+    }
+
+    @Test
+    void should_refuse_the_logger_serial_of_a_sofar_on_a_solax() {
+        final SmartDevice inverter = device(DeviceKind.INVERTER, SmartVendor.OTHER, "")
+            .inverter(InverterBinding.builder().brand(InverterBrand.SOLAX).serialNumber("H1234567890ABC")
+                .loggerSerial(1234567890L).build())
+            .build();
+
+        assertThatThrownBy(() -> DeviceRules.check(inverter))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("loggerSerial is the one of the Solarman logger of a SOFAR, not of an inverter of the brand [solax]");
+    }
+
     private static ApplianceSettings.ApplianceSettingsBuilder<?, ?> appliance() {
         return ApplianceSettings.builder()
             .runningAboveWatts(20).idleBelowWatts(3).minRunMinutes(5).finishedAfterMinutes(10)
@@ -361,6 +458,7 @@ class DeviceRulesTest {
             .enabled(true)
             .shelly("shelly".equals(binding) ? SHELLY : null)
             .eaton("eaton".equals(binding) ? EATON : null)
-            .bthome("bthome".equals(binding) ? BTHOME : null);
+            .bthome("bthome".equals(binding) ? BTHOME : null)
+            .inverter("inverter".equals(binding) ? INVERTER : null);
     }
 }

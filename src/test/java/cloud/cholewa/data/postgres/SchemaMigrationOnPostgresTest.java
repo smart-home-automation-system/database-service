@@ -14,6 +14,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 //The migrations of the service on a real PostgreSQL. The schema every class here runs on was built
 //by them, by the Flyway of the application, when the context started; the two rehearsals below
@@ -317,6 +318,39 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsEntry("members", 1L);
         assertThat(row("SELECT count(*) AS subscriptions FROM %s.push_subscriptions".formatted(schema)))
             .containsEntry("subscriptions", 0L);
+    }
+
+    //V20 (HAS-326) over the registry as it is: a device of each of the three bindings keeps it and has no
+    //inverter binding, and so does a row the released version inserts afterwards, not naming the columns -
+    //the check of one binding of four takes what the check of one of three took
+    @Test
+    void should_leave_every_device_without_an_inverter_binding_also_one_an_older_release_inserts() {
+        final String schema = "rehearsal_inverters";
+        startOver(schema);
+        migrate(schema, "19");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Cinema windows', 'CINEMA', 'BLINDS', 'EATON', true, 'BLINDS', 20)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation)
+            VALUES (now(), 'Kitchen lamp', 'KITCHEN', 'LIGHT', 'SHELLY', true, '192.0.2.65', 1)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, bthome_address)
+            VALUES (now(), 'Garden weather', 'GARDEN', 'WEATHER_STATION', 'OTHER', true, '7c:c6:b6:00:00:01')"""
+            .formatted(schema));
+
+        migrate(schema, "latest");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Office windows', 'OFFICE', 'BLINDS', 'EATON', true, 'BLINDS', 21)""".formatted(schema));
+
+        assertThat(rows("""
+            SELECT num_nonnulls(shelly_address, eaton_gateway, bthome_address) AS bindings,
+                num_nonnulls(inverter_brand, inverter_serial_number, inverter_address, inverter_registration_number,
+                    inverter_logger_serial, inverter_battery_serial_number) AS inverter
+            FROM %s.devices ORDER BY id""".formatted(schema)))
+            .extracting(device -> device.get("bindings"), device -> device.get("inverter"))
+            .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0));
     }
 
     //the container outlives the test, and with it the schema of an earlier run in the same JVM

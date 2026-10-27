@@ -4,6 +4,7 @@ import cloud.cholewa.data.device.registry.model.DeviceEntity;
 import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
+import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
 import org.springframework.stereotype.Component;
@@ -35,6 +36,22 @@ public class SmartDeviceMapper {
             .positioning(entity.getPositioning())
             .openingSensors(openingSensors(entity))
             .appliance(appliance(entity))
+            .inverter(inverter(entity))
+            .build();
+    }
+
+    //the inverter binding is told by its serial number, the column it cannot do without (V20)
+    private static InverterBinding inverter(final DeviceEntity entity) {
+        if (entity.getInverterSerialNumber() == null) {
+            return null;
+        }
+        return InverterBinding.builder()
+            .brand(entity.getInverterBrand())
+            .serialNumber(entity.getInverterSerialNumber())
+            .address(entity.getInverterAddress())
+            .registrationNumber(entity.getInverterRegistrationNumber())
+            .loggerSerial(entity.getInverterLoggerSerial())
+            .batterySerialNumber(entity.getInverterBatterySerialNumber())
             .build();
     }
 
