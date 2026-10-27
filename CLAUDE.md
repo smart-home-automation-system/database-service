@@ -242,10 +242,11 @@ writes of both registries and of the calendar are open to whoever reaches the in
 `device.registry` (HAS-222, `V13`, table `devices`): the devices of the house as `SmartDevice` of
 `smart-home-sdk` >= 1.8.0 - the reads (HAS-222) and the writes (HAS-223, below).
 
-- **A row is flat, the model is nested.** The three bindings (`shelly`, `eaton`, `bthome`) are
-  columns of the one row; exactly one of them is filled. Each is told by the column it cannot
-  do without - `shelly_address`, `eaton_gateway`, `bthome_address` - in the check of the schema
-  (`devices_one_binding`) and in the mapper alike. Change one, change the other.
+- **A row is flat, the model is nested.** The four bindings (`shelly`, `eaton`, `bthome`, and
+  `inverter` since `V20`) are columns of the one row; exactly one of them is filled. Each is told by
+  the column it cannot do without - `shelly_address`, `eaton_gateway`, `bthome_address`,
+  `inverter_serial_number` - in the check of the schema (`devices_one_binding`) and in the mapper
+  alike. Change one, change the other.
 - **`SmartDeviceMapper` is written by hand, on purpose** - the one mapper here that is not
   MapStruct. MapStruct fills a nested target whenever its source object is there, so every
   device would come out with all three bindings, two of them objects of nulls; the model is
@@ -355,7 +356,8 @@ writes of both registries and of the calendar are open to whoever reaches the in
     the Eaton binding and the other way round; a Shelly binding only for the vendor `shelly`
     (a Bluetooth sensor is `shelly` or `other`); and per kind the bindings it is reached
     through - `blinds` / `light` / `push button`: shelly, eaton; the four sensors: any; `weather station`:
-    bthome; `bthome gateway`: shelly; `appliance`: shelly. The switch names every kind, so a kind added to the SDK
+    bthome; `bthome gateway`: shelly; `appliance`: shelly; `inverter`: inverter (and that binding is of
+    this kind alone - the four sensors name their three bindings, not `allOf`). The switch names every kind, so a kind added to the SDK
     stops the compiler there. The matrix is the service's own reading of "the binding fits
     the vendor and the kind" - the README states it; change both.
   - **A Shelly of generation 2 or later needs its `deviceId`** (owner, 2026-10-12; the SDK
@@ -421,6 +423,25 @@ writes of both registries and of the calendar are open to whoever reaches the in
   - **No appliance is registered before every reader of every kind knows the kind**: the services
     read by `?kind=` and never see it, the dashboard reads the whole registry and copies
     `DeviceRules` (`device-rules.ts`) - it moves first.
+- **The inverter binding** (HAS-326, `V20`, SDK 1.15.0): a photovoltaic inverter read by
+  `energy-service` is the kind `inverter`, of the vendor `other`, reached by `InverterBinding` -
+  six nullable columns `inverter_*`, told by the serial number.
+  - **The binding is the part of the kind**: `DeviceRules` gives `inverter` the binding `inverter`
+    only and no other kind that binding, so there is no separate "part of another kind" rule as
+    for `appliance`. Per brand: `registrationNumber` (the SolaX dongle) only on `solax`, `loggerSerial`
+    (the Solarman logger) only on `sofar`; nothing beyond the brand and the serial is asked for.
+    The schema repeats all of it (`devices_inverter_*`, `V20`).
+  - **One device per serial number** (`devices_inverter_serial_number_uq`, mapped to
+    `DEVICE_CONFLICT` by that name).
+  - **`registrationNumber` is the password of the local API of the dongle** - served by the registry
+    read and logged by Logbook with the body, within the accepted LAN-only access.
+  - **Rollout and rollback**: the released 0.19.0 reads and writes next to `V20` (its rows have one
+    of three bindings and pass the check of four - rehearsed on a throwaway PostgreSQL and in
+    `SchemaMigrationOnPostgresTest`), but **cannot read an inverter**: once one is stored, a read of
+    the whole registry by 0.19.0 answers `500` (`No enum constant ... INVERTER`). Register the inverters
+    only after 0.20.0 runs, and never roll back below it after that.
+  - The services read the registry by `?kind=` and never get an inverter; the dashboard reads every
+    kind without the SDK and shows an unknown one as it comes.
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
@@ -584,6 +605,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
+- SDK **1.15.0** since HAS-326 (the inverter).
 - `mvn verify` (JDK 21; with a running Docker it also runs the tests on PostgreSQL, below).
   `tidy-maven-plugin:check` runs in `verify`, so after editing the pom run
   `mvn tidy:pom`. The enforcer's `dependencyConvergence` is on. The `apiguardian-api` pin in

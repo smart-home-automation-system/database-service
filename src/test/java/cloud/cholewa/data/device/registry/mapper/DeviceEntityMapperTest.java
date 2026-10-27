@@ -7,6 +7,8 @@ import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
+import cloud.cholewa.home.model.InverterBinding;
+import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.LightKind;
 import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.ShellyBinding;
@@ -48,6 +50,12 @@ class DeviceEntityMapperTest {
     private static final ApplianceSettings APPLIANCE = ApplianceSettings.builder()
         .runningAboveWatts(20).idleBelowWatts(3).minRunMinutes(5).finishedAfterMinutes(10)
         .reminderEveryMinutes(30).maxReminders(4).quietFrom("22:00").quietTo("07:00")
+        .build();
+
+    //every field of the binding, of both brands - no rule would take it, the mapper does not judge
+    private static final InverterBinding EVERY_INVERTER_FIELD = InverterBinding.builder()
+        .brand(InverterBrand.SOLAX).serialNumber("H1234567890ABC").address("192.0.2.120")
+        .registrationNumber("SABCDEFGHI").loggerSerial(1234567890L).batterySerialNumber("B1234567890ABC")
         .build();
 
     private final DeviceEntityMapper mapper = new DeviceEntityMapper();
@@ -180,6 +188,7 @@ class DeviceEntityMapperTest {
             .positioning(false)
             .openingSensors(List.of(31L))
             .appliance(APPLIANCE)
+            .inverter(EVERY_INVERTER_FIELD)
             .build();
         final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED).build();
 
@@ -217,6 +226,12 @@ class DeviceEntityMapperTest {
             .applianceMaxReminders(4)
             .applianceQuietFrom(LocalTime.of(22, 0))
             .applianceQuietTo(LocalTime.of(7, 0))
+            .inverterBrand(InverterBrand.SOLAX)
+            .inverterSerialNumber("H1234567890ABC")
+            .inverterAddress("192.0.2.120")
+            .inverterRegistrationNumber("SABCDEFGHI")
+            .inverterLoggerSerial(1234567890L)
+            .inverterBatterySerialNumber("B1234567890ABC")
             .build();
 
         final DeviceEntity off = mapper.withEnabled(existing, false);
@@ -279,6 +294,30 @@ class DeviceEntityMapperTest {
                 DeviceEntity::getApplianceReminderEveryMinutes, DeviceEntity::getApplianceMaxReminders,
                 DeviceEntity::getApplianceQuietFrom, DeviceEntity::getApplianceQuietTo)
             .containsOnlyNulls();
+    }
+
+    //An inverter (HAS-326): its binding becomes the six columns inverter_*, the fields left out empty
+    @Test
+    void should_make_a_new_row_of_an_inverter_with_its_binding() {
+        final SmartDevice inverter = SmartDevice.builder().name("Inverter").room(RoomName.BOILER)
+            .kind(DeviceKind.INVERTER).vendor(SmartVendor.OTHER).enabled(true)
+            .inverter(InverterBinding.builder().brand(InverterBrand.SOFAR).serialNumber("S1234567890ABCDEF")
+                .address("192.0.2.121").loggerSerial(1234567890L).build())
+            .build();
+
+        assertThat(mapper.toNewEntity(inverter)).usingRecursiveComparison().ignoringFields("createdAt")
+            .isEqualTo(DeviceEntity.builder()
+                .name("Inverter")
+                .room(RoomName.BOILER)
+                .kind(DeviceKind.INVERTER)
+                .vendor(SmartVendor.OTHER)
+                .enabled(true)
+                .openingSensors(List.of())
+                .inverterBrand(InverterBrand.SOFAR)
+                .inverterSerialNumber("S1234567890ABCDEF")
+                .inverterAddress("192.0.2.121")
+                .inverterLoggerSerial(1234567890L)
+                .build());
     }
 
     //the column is NOT NULL: a list sent as null is none, and the row never shares the payload's list

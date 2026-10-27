@@ -7,6 +7,8 @@ import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
+import cloud.cholewa.home.model.InverterBinding;
+import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.LightKind;
 import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.ShellyBinding;
@@ -195,6 +197,33 @@ class SmartDeviceMapperTest {
         assertThat(bthome.getShelly()).isNull();
         assertThat(bthome.getEaton()).isNull();
         assertThat(bthome.getBthome()).isNotNull();
+
+        assertThat(shelly.getInverter()).isNull();
+        assertThat(eaton.getInverter()).isNull();
+        assertThat(bthome.getInverter()).isNull();
+    }
+
+    //An inverter (HAS-326): the six columns as its binding, told by the serial number; what a brand
+    //does not have is left out
+    @Test
+    void should_map_an_inverter_with_its_binding() {
+        final DeviceEntity entity = row().id(120L).name("Inverter").room(RoomName.BOILER).kind(DeviceKind.INVERTER)
+            .vendor(SmartVendor.OTHER).enabled(true)
+            .inverterBrand(InverterBrand.SOLAX).inverterSerialNumber("H1234567890ABC").inverterAddress("192.0.2.120")
+            .inverterRegistrationNumber("SABCDEFGHI").inverterBatterySerialNumber("B1234567890ABC")
+            .build();
+
+        assertThat(mapper.toDevice(entity)).isEqualTo(SmartDevice.builder()
+            .id(120L)
+            .name("Inverter")
+            .room(RoomName.BOILER)
+            .kind(DeviceKind.INVERTER)
+            .vendor(SmartVendor.OTHER)
+            .enabled(true)
+            .inverter(InverterBinding.builder().brand(InverterBrand.SOLAX).serialNumber("H1234567890ABC")
+                .address("192.0.2.120").registrationNumber("SABCDEFGHI").batterySerialNumber("B1234567890ABC")
+                .build())
+            .build());
     }
 
     //a Gen1 Shelly has no MQTT id, and a device without channels no channel

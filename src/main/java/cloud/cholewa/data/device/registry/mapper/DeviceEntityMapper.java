@@ -4,6 +4,7 @@ import cloud.cholewa.data.device.registry.model.DeviceEntity;
 import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
+import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
 import org.springframework.stereotype.Component;
@@ -51,6 +52,7 @@ public class DeviceEntityMapper {
         final EatonBinding eaton = device.getEaton();
         final BthomeBinding bthome = device.getBthome();
         final ApplianceSettings appliance = device.getAppliance();
+        final InverterBinding inverter = device.getInverter();
 
         return DeviceEntity.builder()
             .name(device.getName())
@@ -76,7 +78,13 @@ public class DeviceEntityMapper {
             .applianceReminderEveryMinutes(appliance == null ? null : appliance.getReminderEveryMinutes())
             .applianceMaxReminders(appliance == null ? null : appliance.getMaxReminders())
             .applianceQuietFrom(appliance == null ? null : QuietTime.parse(appliance.getQuietFrom()))
-            .applianceQuietTo(appliance == null ? null : QuietTime.parse(appliance.getQuietTo()));
+            .applianceQuietTo(appliance == null ? null : QuietTime.parse(appliance.getQuietTo()))
+            .inverterBrand(inverter == null ? null : inverter.getBrand())
+            .inverterSerialNumber(inverter == null ? null : inverter.getSerialNumber())
+            .inverterAddress(inverter == null ? null : inverter.getAddress())
+            .inverterRegistrationNumber(inverter == null ? null : inverter.getRegistrationNumber())
+            .inverterLoggerSerial(inverter == null ? null : inverter.getLoggerSerial())
+            .inverterBatterySerialNumber(inverter == null ? null : inverter.getBatterySerialNumber());
     }
 
     //the column is never null: a list the payload left out, or sent as null, is none
