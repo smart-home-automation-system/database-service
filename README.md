@@ -164,6 +164,10 @@ What a reader can rely on:
   `registrationNumber` is the one of a SolaX dongle, `loggerSerial` the one of the Solarman logger of a
   SOFAR. **The release before 0.20.0 cannot read an inverter**: once one is stored, a rollback answers
   `500` for every read of the whole registry (a read by another kind still works).
+- **A `water valve`** (since 0.21.0, SDK 1.16.0, HAS-311) is the smart valve on the water main, read by
+  `water-service`: a Shelly of generation 2 or later (the Neo valve is a Shelly X of generation 3) with its
+  `deviceId`, on the channel 0, of the vendor `shelly`. No migration - the kind is stored by its name. **The
+  release before 0.21.0 cannot read a valve**: register it only after 0.21.0 runs, and never roll back below it.
 - **A device of the Eaton configuration has a name the registry gave it** - its room, its
   kind and its point (`Living room temperature sensor 45`) - because a configuration has none.
 - A device is addressed by `id` here, unlike a member of the household (by name): it has no
@@ -186,6 +190,7 @@ What a writer has to know:
     | `bthome gateway` | `shelly` |
     | `appliance` (since 0.18.0) | `shelly` - the plug the appliance runs on |
     | `inverter` (since 0.20.0) | `inverter` - and the `inverter` binding is of this kind alone |
+    | `water valve` (since 0.21.0) | `shelly` - of generation 2 or later, on the channel 0 |
 
   - a Shelly channel is an output, 0 to 3, of any kind - or a zone, 200 to 299 (`presencezone:200`),
     of a `presence sensor` alone (since 0.17.0, HAS-260);
@@ -358,7 +363,7 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
-| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts`, an `inverter` binding of a named vendor or with a number of the other brand |
+| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts`, an `inverter` binding of a named vendor or with a number of the other brand, a `water valve` on a Shelly of the first generation or on a channel other than 0 |
 | `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry; or the device is an opening sensor that blinds still name, and cannot be removed |
 | `NOT_FOUND_DAY_OFF` | 404 | the household added no day off on that date - a holiday and a weekend are days off without being stored |
 

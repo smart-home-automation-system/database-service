@@ -625,6 +625,32 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             .jsonPath("$[0].shelly").doesNotExist();
     }
 
+    //The water valve (HAS-311): the kind is stored by its constant name in the text column - no migration -
+    //and found by its kind, which is how water-service will read it
+    @Test
+    void should_register_a_water_valve_and_find_it_by_its_kind() {
+        final long valve = added("""
+            {"name": "Water valve", "room": "garage", "kind": "water valve", "vendor": "shelly", "enabled": true,
+             "shelly": {"address": "192.0.2.235", "generation": 3, "deviceId": "neowatervalve-000000000000",
+                        "channel": 0}}""");
+
+        assertThat(stored(valve))
+            .containsEntry("kind", "WATER_VALVE")
+            .containsEntry("vendor", "SHELLY")
+            .containsEntry("shelly_device_id", "neowatervalve-000000000000");
+
+        webTestClient.get()
+            .uri("/device/registry?kind=water valve")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.length()").isEqualTo(1)
+            .jsonPath("$[0].id").isEqualTo(valve)
+            .jsonPath("$[0].kind").isEqualTo("water valve")
+            .jsonPath("$[0].shelly.generation").isEqualTo(3)
+            .jsonPath("$[0].shelly.channel").isEqualTo(0);
+    }
+
     //the logger serial is four bytes: the largest of them is stored and answered whole
     @Test
     void should_register_a_sofar_with_the_largest_logger_serial() {

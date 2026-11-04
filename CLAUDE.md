@@ -357,7 +357,8 @@ writes of both registries and of the calendar are open to whoever reaches the in
     (a Bluetooth sensor is `shelly` or `other`); and per kind the bindings it is reached
     through - `blinds` / `light` / `push button`: shelly, eaton; the four sensors: any; `weather station`:
     bthome; `bthome gateway`: shelly; `appliance`: shelly; `inverter`: inverter (and that binding is of
-    this kind alone - the four sensors name their three bindings, not `allOf`). The switch names every kind, so a kind added to the SDK
+    this kind alone - the four sensors name their three bindings, not `allOf`); `water valve`: shelly
+    (HAS-311 - of generation 2 or later, on the channel 0, `checkWaterValve`). The switch names every kind, so a kind added to the SDK
     stops the compiler there. The matrix is the service's own reading of "the binding fits
     the vendor and the kind" - the README states it; change both.
   - **A Shelly of generation 2 or later needs its `deviceId`** (owner, 2026-10-12; the SDK
@@ -605,14 +606,15 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- SDK **1.15.0** since HAS-326 (the inverter).
+- SDK **1.16.0** since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` - no migration, the kind column is text;
+  the release before 0.21.0 cannot read a stored valve).
 - `mvn verify` (JDK 21; with a running Docker it also runs the tests on PostgreSQL, below).
   `tidy-maven-plugin:check` runs in `verify`, so after editing the pom run
   `mvn tidy:pom`. The enforcer's `dependencyConvergence` is on. The `apiguardian-api` pin in
   `<dependencyManagement>` is gone since logbook 4.2.0 (with Boot 4.1.1, HAS-145), which
   declares the version JUnit 6 does; should the two disagree again, pin it — do not exclude it.
 - logbook needs the optional `spring-boot-http-client` module on Boot 4.1 (already declared).
-- **`cholewa-commons` 1.12.0** (HAS-276; 1.11.0 since HAS-272, from 1.9.0; 1.12.0 adds the household publisher, not used here): Logbook runs as a WebFilter in the reactive
+- **`cholewa-commons` 1.13.0** (HAS-311; 1.12.0 since HAS-276, 1.11.0 since HAS-272, from 1.9.0; 1.12.0 and 1.13.0 add publishers not used here): Logbook runs as a WebFilter in the reactive
   chain, so its lines carry the `traceId` (1.10.0), and the actuator is left out of its log
   (1.10.1). This service has no `WebClient`, no own `LogbookClientHandler` and no `@Scheduled`
   task, so nothing else of 1.10.0 / 1.11.0 applies here.
