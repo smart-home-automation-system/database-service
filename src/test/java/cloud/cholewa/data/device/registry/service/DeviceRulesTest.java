@@ -121,8 +121,8 @@ class DeviceRulesTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY", "APPLIANCE", "INVERTER"},
-        mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY", "APPLIANCE", "INVERTER",
+        "WATER_VALVE"}, mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_way_a_light_is_driven_on_anything_but_a_light(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.EATON, "eaton").lightKind(LightKind.DIMMER).build();
 
@@ -439,6 +439,81 @@ class DeviceRulesTest {
         assertThatThrownBy(() -> DeviceRules.check(inverter))
             .isInstanceOf(InvalidDeviceException.class)
             .hasMessage("loggerSerial is the one of the Solarman logger of a SOFAR, not of an inverter of the brand [solax]");
+    }
+
+    //The water valve of the garage (HAS-311): a Shelly X of generation 3 with its MQTT id, on the channel 0
+    private static final ShellyBinding VALVE = valve(3, "neowatervalve-000000000000", 0);
+
+    private static ShellyBinding valve(final int generation, final String deviceId, final Integer channel) {
+        return ShellyBinding.builder().address("192.0.2.235").generation(generation).deviceId(deviceId).channel(channel).build();
+    }
+
+    @Test
+    void should_take_a_water_valve_on_a_shelly_of_the_second_generation_on_the_channel_0() {
+        final SmartDevice valve = device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none").shelly(VALVE).build();
+
+        assertThatCode(() -> DeviceRules.check(valve)).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"EATON, eaton", "SHELLY, bthome", "OTHER, bthome", "OTHER, inverter"})
+    void should_refuse_a_water_valve_reached_through_anything_but_a_shelly(final SmartVendor vendor, final String binding) {
+        final SmartDevice valve = device(DeviceKind.WATER_VALVE, vendor, binding).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(valve))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessageContaining("[water valve]")
+            .hasMessageEndingWith("only through: shelly");
+    }
+
+    //its readings are virtual components over MQTT and RPC: a Gen1 Shelly has neither
+    @Test
+    void should_refuse_a_water_valve_of_the_first_generation() {
+        final SmartDevice valve = device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
+            .shelly(valve(1, null, 0)).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(valve))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the kind [water valve] is a Shelly of generation 2 or later, not 1");
+    }
+
+    @Test
+    void should_refuse_a_water_valve_without_the_id_it_reports_under() {
+        final SmartDevice valve = device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
+            .shelly(valve(3, null, 0)).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(valve))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A Shelly of generation 3 needs its deviceId - the id it reports under over MQTT");
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.NullSource
+    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 3})
+    void should_refuse_a_water_valve_on_another_channel(final Integer channel) {
+        final SmartDevice valve = device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
+            .shelly(valve(3, "neowatervalve-000000000000", channel)).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(valve))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the kind [water valve] is reached on the channel 0, not " + channel);
+    }
+
+    //the fields of another kind are refused on a valve as on every kind
+    @Test
+    void should_refuse_the_fields_of_another_kind_on_a_water_valve() {
+        assertThatThrownBy(() -> DeviceRules.check(device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
+                .shelly(VALVE).lightKind(LightKind.DIMMER).build()))
+            .hasMessage("lightKind describes a light, not a device of the kind [water valve]");
+        assertThatThrownBy(() -> DeviceRules.check(device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
+                .shelly(VALVE).positioning(true).build()))
+            .hasMessage("placement and positioning describe blinds, not a device of the kind [water valve]");
+        assertThatThrownBy(() -> DeviceRules.check(device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
+                .shelly(VALVE).openingSensors(List.of(57L)).build()))
+            .hasMessage("openingSensors describe the window of blinds, not a device of the kind [water valve]");
+        assertThatThrownBy(() -> DeviceRules.check(device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
+                .shelly(VALVE).appliance(APPLIANCE).build()))
+            .hasMessage("appliance describes an appliance, not a device of the kind [water valve]");
     }
 
     private static ApplianceSettings.ApplianceSettingsBuilder<?, ?> appliance() {

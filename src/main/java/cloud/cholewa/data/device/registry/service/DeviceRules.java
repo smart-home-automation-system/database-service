@@ -86,6 +86,26 @@ final class DeviceRules {
         checkOpeningSensors(device);
         checkAppliance(device);
         checkInverter(device);
+        checkWaterValve(device);
+    }
+
+    //The water valve (HAS-311): a Shelly X of the generation 2 or later - its readings are virtual
+    //components that come over MQTT and RPC, which a Gen1 device has not - reached on the channel 0, the one
+    //it reports its state under. Its vendor and its binding are the rules above, the deviceId the rule of
+    //every Shelly from the second generation on
+    private static void checkWaterValve(final SmartDevice device) {
+        if (device.getKind() != DeviceKind.WATER_VALVE) {
+            return;
+        }
+        if (device.getShelly().getGeneration() < FIRST_GENERATION_ON_MQTT) {
+            throw new InvalidDeviceException(
+                "A device of the kind [water valve] is a Shelly of generation " + FIRST_GENERATION_ON_MQTT
+                    + " or later, not " + device.getShelly().getGeneration());
+        }
+        if (!Integer.valueOf(0).equals(device.getShelly().getChannel())) {
+            throw new InvalidDeviceException(
+                "A device of the kind [water valve] is reached on the channel 0, not " + device.getShelly().getChannel());
+        }
     }
 
     //The part of an inverter (HAS-326) is its binding, so one of the kind inverter has it and no
@@ -212,6 +232,8 @@ final class DeviceRules {
             //an inverter is read by energy-service through its dongle, its logger or a cloud, and
             //is known by its serial number - the inverter part is its binding (HAS-326)
             case INVERTER -> EnumSet.of(Binding.INVERTER);
+            //the water valve of the garage is a Shelly X on the network, read by water-service (HAS-311)
+            case WATER_VALVE -> EnumSet.of(Binding.SHELLY);
         };
     }
 
