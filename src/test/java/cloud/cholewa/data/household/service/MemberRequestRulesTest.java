@@ -20,7 +20,8 @@ class MemberRequestRulesTest {
     @Test
     void should_take_a_text_of_one_hundred_and_refuse_one_more() {
         assertThat(MemberRequestRules.text("a".repeat(100))).hasSize(100);
-        assertThatThrownBy(() -> MemberRequestRules.text("a".repeat(101)))
+        final String tooLong = "a".repeat(101);
+        assertThatThrownBy(() -> MemberRequestRules.text(tooLong))
             .isInstanceOf(InvalidMemberRequestException.class)
             .hasMessage("The text of a request is at most 100 characters, not 101");
     }

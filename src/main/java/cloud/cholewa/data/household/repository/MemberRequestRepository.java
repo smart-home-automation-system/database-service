@@ -34,6 +34,9 @@ public class MemberRequestRepository {
         UPDATE member_requests SET sent_at = :sentAt
         WHERE id = ANY(CAST(:ids AS BIGINT[])) AND sent_at IS NULL""";
 
+    private static final String MEMBER_ID = "member_id";
+    private static final String DONE_AT = "done_at";
+
     private final R2dbcEntityTemplate template;
 
     public Mono<MemberRequestEntity> save(final MemberRequestEntity request) {
@@ -42,36 +45,36 @@ public class MemberRequestRepository {
 
     //the list of a member: the open requests, and with doneSince also those done since then - oldest first
     public Flux<MemberRequestEntity> findListOfMember(final Long memberId, final LocalDateTime doneSince) {
-        final Criteria open = Criteria.where("done_at").isNull();
-        final Criteria shown = doneSince == null ? open : open.or("done_at").greaterThanOrEquals(doneSince);
+        final Criteria open = Criteria.where(DONE_AT).isNull();
+        final Criteria shown = doneSince == null ? open : open.or(DONE_AT).greaterThanOrEquals(doneSince);
         return template.select(
-            Query.query(Criteria.where("member_id").is(memberId).and(shown))
+            Query.query(Criteria.where(MEMBER_ID).is(memberId).and(shown))
                 .sort(Sort.by("created_at", "id")),
             MemberRequestEntity.class);
     }
 
     public Mono<MemberRequestEntity> findOneOfMember(final Long memberId, final Long id) {
         return template.selectOne(
-            Query.query(Criteria.where("id").is(id).and("member_id").is(memberId)), MemberRequestEntity.class);
+            Query.query(Criteria.where("id").is(id).and(MEMBER_ID).is(memberId)), MemberRequestEntity.class);
     }
 
     //done unless done already - the first doneAt and doneBy stay; the number of rows changed
     public Mono<Long> markDone(final Long memberId, final Long id, final LocalDateTime doneAt, final String doneBy) {
         return template.update(
-            Query.query(Criteria.where("id").is(id).and("member_id").is(memberId).and("done_at").isNull()),
-            Update.update("done_at", doneAt).set("done_by", doneBy),
+            Query.query(Criteria.where("id").is(id).and(MEMBER_ID).is(memberId).and(DONE_AT).isNull()),
+            Update.update(DONE_AT, doneAt).set("done_by", doneBy),
             MemberRequestEntity.class);
     }
 
     public Mono<Long> deleteOfMember(final Long memberId, final Long id) {
         return template.delete(
-            Query.query(Criteria.where("id").is(id).and("member_id").is(memberId)), MemberRequestEntity.class);
+            Query.query(Criteria.where("id").is(id).and(MEMBER_ID).is(memberId)), MemberRequestEntity.class);
     }
 
     //the retention without a scheduler: the done requests of a member done before the time
     public Mono<Long> deleteDoneBefore(final Long memberId, final LocalDateTime before) {
         return template.delete(
-            Query.query(Criteria.where("member_id").is(memberId).and("done_at").lessThan(before)),
+            Query.query(Criteria.where(MEMBER_ID).is(memberId).and(DONE_AT).lessThan(before)),
             MemberRequestEntity.class);
     }
 
