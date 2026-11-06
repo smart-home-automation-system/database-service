@@ -13,6 +13,8 @@ import cloud.cholewa.data.error.InvalidDeviceException;
 import cloud.cholewa.data.error.InvalidHouseholdMemberException;
 import cloud.cholewa.data.error.MemberDeviceException;
 import cloud.cholewa.data.error.MemberDeviceNotFoundException;
+import cloud.cholewa.data.error.InvalidMemberRequestException;
+import cloud.cholewa.data.error.MemberRequestNotFoundException;
 import cloud.cholewa.data.error.MemberSwitchedOffException;
 import cloud.cholewa.data.error.processor.DomainExceptionProcessor;
 import cloud.cholewa.data.error.processor.InvalidRequestParameterProcessor;
@@ -33,12 +35,14 @@ import static cloud.cholewa.data.error.CustomErrorDescription.DEVICE_EXIST;
 import static cloud.cholewa.data.error.CustomErrorDescription.HOUSEHOLD_CONFLICT;
 import static cloud.cholewa.data.error.CustomErrorDescription.INVALID_DEVICE;
 import static cloud.cholewa.data.error.CustomErrorDescription.INVALID_HOUSEHOLD_MEMBER;
+import static cloud.cholewa.data.error.CustomErrorDescription.INVALID_REQUEST;
 import static cloud.cholewa.data.error.CustomErrorDescription.MEMBER_SWITCHED_OFF;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_DAY_OFF;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_DEVICE;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_DEVICE_CONFIGURATION;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_HOUSEHOLD_MEMBER;
 import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_MEMBER_DEVICE;
+import static cloud.cholewa.data.error.CustomErrorDescription.NOT_FOUND_REQUEST;
 import static cloud.cholewa.data.error.CustomErrorDescription.UNKNOWN_GATEWAY;
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
 import static org.springframework.http.HttpStatus.CONFLICT;
@@ -77,6 +81,8 @@ public class ExceptionHandlerConfig {
                 Map.entry(DeviceConflictException.class, new DomainExceptionProcessor(CONFLICT, DEVICE_CONFLICT)),
                 Map.entry(DayOffNotFoundException.class, new DomainExceptionProcessor(NOT_FOUND, NOT_FOUND_DAY_OFF)),
                 Map.entry(MemberSwitchedOffException.class, new DomainExceptionProcessor(CONFLICT, MEMBER_SWITCHED_OFF)),
+                Map.entry(MemberRequestNotFoundException.class, new DomainExceptionProcessor(NOT_FOUND, NOT_FOUND_REQUEST)),
+                Map.entry(InvalidMemberRequestException.class, new DomainExceptionProcessor(BAD_REQUEST, INVALID_REQUEST)),
                 //constraints on query parameters and path variables; without it the cholewa-commons
                 //default answers a bare "Validation failure". Not a named cause, so no code
                 Map.entry(HandlerMethodValidationException.class, new InvalidRequestParameterProcessor())

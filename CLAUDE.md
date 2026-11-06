@@ -237,6 +237,38 @@ writes of both registries and of the calendar are open to whoever reaches the in
     the manifest the variable is `HOUSEHOLD_PUSH_PUBLICKEY`**; a misspelt one binds nothing and the
     answer stays `{}` with no error anywhere - check `push-config` after the deploy that sets it.
 
+- **Household requests** (HAS-409, `V21`, `MemberRequest` of SDK 1.17.0, epic HAS-407): an errand one
+  member writes for another, texted once by `notification-service` at 08:00 and kept until ticked off.
+  - **A table and endpoints of their own** (`member_requests`, `MemberRequestController`) - never a field
+    of `HouseholdMember`, the rule of the push subscriptions. **Referenced by `member_id`, not by name** as
+    the task planned: the name is unique by an index on `upper(name)` (V10), which a foreign key cannot
+    reference; the id keeps the list through a rename and `ON DELETE CASCADE` takes it with the member.
+  - **The id is exposed** (the SDK model has it) - against "no surrogate id" of the household: a request has
+    no natural key. It is addressed below its member (`/member/{name}/requests/{id}`), and an id of another
+    member's list is `404 NOT_FOUND_REQUEST` - the repository asks by both.
+  - **The body is not `@Valid`**: `MemberRequestRules` checks the text (stripped, 1-100 UTF-16 units - the
+    count of `@Size` and of a JavaScript string - one line) and the names, so a refusal is
+    `400 INVALID_REQUEST` with the reason, which the dashboard words. Only `text` and `author` are read;
+    the server sets the rest. The author and who ticked it off must be members switched on, stored as the
+    registry spells them - history, not a reference (a later rename leaves the old spelling).
+  - **The writes are conditional, each one statement** (`MemberRequestRepository`, not an
+    `R2dbcRepository`): done unless done (the first `doneAt` stays), sent unless sent (an id sent before or
+    unknown is skipped - `notification-service` may repeat after a cut-off).
+  - **Retention without a scheduler**: every `POST` deletes the done requests of that member older than 30
+    days first, in the same chain (owner, HAS-407). A list nobody writes to keeps its old done rows - they
+    are shown only with `?done=true`, which reads 30 days back anyway.
+  - **Everything is below the routed `/household`**, the read and the marking of `notification-service`
+    included (`GET /household/requests?pending=true`, `PUT /household/requests/sent`): the texts of the
+    household are reachable through the gateway, LAN / VPN only - accepted with the task. Unlike the push
+    keys, nothing secret is in them.
+  - The text is never logged by the service (member, id and author are); Logbook logs the bodies at trace,
+    the accepted rule.
+  - **A member switched off is left out of the pending read, not of the list**: the requests written
+    before keep `sentAt` empty and are texted the first 08:00 after the member is switched on again,
+    however old - the rule "once per request, kept until ticked off" (owner, HAS-407). A new request for a
+    member switched off is refused (`409 MEMBER_SWITCHED_OFF`).
+  - `OnPostgres.emptyTheTables` needs nothing: the rows go with their members (`ON DELETE CASCADE`).
+
 ## Device registry - the parts worth knowing before changing anything
 
 `device.registry` (HAS-222, `V13`, table `devices`): the devices of the house as `SmartDevice` of
@@ -606,8 +638,8 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- SDK **1.16.0** since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` - no migration, the kind column is text;
-  the release before 0.21.0 cannot read a stored valve).
+- SDK **1.17.0** since HAS-409 (`MemberRequest`, additive); 1.16.0 since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` -
+  no migration, the kind column is text; the release before 0.21.0 cannot read a stored valve).
 - `mvn verify` (JDK 21; with a running Docker it also runs the tests on PostgreSQL, below).
   `tidy-maven-plugin:check` runs in `verify`, so after editing the pom run
   `mvn tidy:pom`. The enforcer's `dependencyConvergence` is on. The `apiguardian-api` pin in
@@ -631,7 +663,8 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `src/test/java/cloud/cholewa/data/postgres`, all extending `OnPostgres`:
   `SchemaMigrationOnPostgresTest`, `HouseholdRegistryOnPostgresTest`,
   `EatonConfigurationOnPostgresTest`, `DeviceRegistryOnPostgresTest`,
-  `DeviceRegistryWritesOnPostgresTest`, `CalendarOnPostgresTest`, `PushSubscriptionsOnPostgresTest`. What to know before touching them:
+  `DeviceRegistryWritesOnPostgresTest`, `CalendarOnPostgresTest`, `PushSubscriptionsOnPostgresTest`,
+  `MemberRequestsOnPostgresTest`. What to know before touching them:
   - **They start the whole application** (`@SpringBootTest`, nothing mocked) on a
     `postgres:17-alpine` in Docker (Testcontainers, versions managed by Boot). The `test`
     profile switches Flyway off; `OnPostgres` switches it on and points `database.*` and
