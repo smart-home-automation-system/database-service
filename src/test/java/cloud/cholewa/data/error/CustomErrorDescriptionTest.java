@@ -29,7 +29,9 @@ class CustomErrorDescriptionTest {
                 "INVALID_DEVICE",
                 "DEVICE_CONFLICT",
                 "NOT_FOUND_DAY_OFF",
-                "MEMBER_SWITCHED_OFF"
+                "MEMBER_SWITCHED_OFF",
+                "NOT_FOUND_REQUEST",
+                "INVALID_REQUEST"
             );
     }
 }
