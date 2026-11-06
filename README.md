@@ -117,7 +117,8 @@ point.
 
 What a reader can rely on:
 
-- **A device has exactly one binding** - `shelly`, `eaton`, `bthome` or (since 0.20.0) `inverter` -
+- **A device has exactly one binding** - `shelly`, `eaton`, `bthome`, (since 0.20.0) `inverter` or (since
+  0.23.0) `gree` -
   and the others are not in the JSON at all (not `null`, not `{}`). The schema guarantees the one.
 - **The fields of one kind only** (`lightKind`, `placement`, `positioning`) are left out when
   the row has none; a missing `positioning` is "not known", never `false`.
@@ -168,6 +169,19 @@ What a reader can rely on:
   `water-service`: a Shelly of generation 2 or later (the Neo valve is a Shelly X of generation 3) with its
   `deviceId`, on the channel 0, of the vendor `shelly`. No migration - the kind is stored by its name. **The
   release before 0.21.0 cannot read a valve**: register it only after 0.21.0 runs, and never roll back below it.
+- **An `air conditioner`** (since 0.23.0, SDK 1.18.0, HAS-378, epic HAS-376) is an indoor unit driven by
+  `aircon-service`, of the vendor `gree`, reached by its `gree` binding alone - the IPv4 address of the unit
+  and its MAC as the unit gives it (12 hex digits, lower case, no separators). The key of a unit is never
+  stored.
+
+  ```json
+  {"id": 140, "name": "Air conditioner", "room": "office", "kind": "air conditioner", "enabled": true,
+   "vendor": "gree", "gree": {"address": "192.0.2.59", "mac": "02005e0000a1"}}
+  ```
+
+  **The release before 0.23.0 cannot read an air conditioner** (nor its vendor): once one is stored, a
+  rollback answers `500` for every read of the whole registry (a read by another kind still works) -
+  register the units only after 0.23.0 runs, and never roll back below it.
 - **A device of the Eaton configuration has a name the registry gave it** - its room, its
   kind and its point (`Living room temperature sensor 45`) - because a configuration has none.
 - A device is addressed by `id` here, unlike a member of the household (by name): it has no
@@ -191,6 +205,7 @@ What a writer has to know:
     | `appliance` (since 0.18.0) | `shelly` - the plug the appliance runs on |
     | `inverter` (since 0.20.0) | `inverter` - and the `inverter` binding is of this kind alone |
     | `water valve` (since 0.21.0) | `shelly` - of generation 2 or later, on the channel 0 |
+    | `air conditioner` (since 0.23.0) | `gree` - and the `gree` binding is of this kind alone |
 
   - a Shelly channel is an output, 0 to 3, of any kind - or a zone, 200 to 299 (`presencezone:200`),
     of a `presence sensor` alone (since 0.17.0, HAS-260);
@@ -207,10 +222,11 @@ What a writer has to know:
     (`400` without a code), and `idleBelowWatts` below `runningAboveWatts`;
   - an `inverter` binding (since 0.20.0, SDK 1.15.0, HAS-326) is of the vendor `other`;
     `registrationNumber` only for the brand `solax`, `loggerSerial` only for `sofar`. Neither is
-    required, nor is `address`.
+    required, nor is `address`;
+  - the vendor `gree` (since 0.23.0, SDK 1.18.0, HAS-378) with the `gree` binding and the other way round.
 - **A binding is one device** - `409` with the code `DEVICE_CONFLICT`, and `details` names
   what is taken: a channel of a Shelly by its address, a channel of a Shelly by its MQTT id,
-  a point of an Eaton gateway, a Bluetooth address, the serial number of an inverter. A Shelly without a channel is one device
+  a point of an Eaton gateway, a Bluetooth address, the serial number of an inverter, the MAC or the address of a Gree unit. A Shelly without a channel is one device
   as a whole, next to which its channels may still be registered.
 - **`PUT` is the whole device, not a patch.** Send everything the device should be; a client
   that edits a device reads it, changes it and sends it back. There is no partial update: the
@@ -371,7 +387,7 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
-| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts`, an `inverter` binding of a named vendor or with a number of the other brand, a `water valve` on a Shelly of the first generation or on a channel other than 0 |
+| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts`, an `inverter` binding of a named vendor or with a number of the other brand, a `water valve` on a Shelly of the first generation or on a channel other than 0, a `gree` binding of another vendor or the vendor `gree` with another binding |
 | `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry; or the device is an opening sensor that blinds still name, and cannot be removed |
 | `NOT_FOUND_DAY_OFF` | 404 | the household added no day off on that date - a holiday and a weekend are days off without being stored |
 
@@ -438,6 +454,12 @@ does not know: the value fails while the body is read, and the answer is a `400`
   one brand with that brand (`devices_inverter_brand_fields`), within the bounds of the SDK
   (`devices_inverter_format`); an inverter by its serial number once
   (`devices_inverter_serial_number_uq`).
+- **Air conditioners** (`V22`, HAS-378): the Gree binding as two nullable columns of `devices`,
+  `gree_address` and `gree_mac`, told by the MAC - `devices_one_binding` counts five bindings since. The
+  binding is whole or absent (`devices_gree_binding_whole`), there exactly when the kind is
+  `AIR_CONDITIONER` (`devices_gree_of_air_conditioners`) and exactly when the vendor is `GREE`
+  (`devices_gree_vendor`), within the bounds of the SDK (`devices_gree_format`); a unit by its MAC once
+  (`devices_gree_mac_uq`) and by its address once (`devices_gree_address_uq`).
 - **Household registry** (`V8`–`V10`): `household_members` (`name` unique ignoring letter case
   since `V10`, `phone` unique, phone
   checked to be E.164 since `V9` — `V8` stored `xxx-xxx-xxx` and `V9` converted the existing
