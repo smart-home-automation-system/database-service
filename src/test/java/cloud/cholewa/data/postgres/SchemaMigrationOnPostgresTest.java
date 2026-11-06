@@ -353,6 +353,42 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0));
     }
 
+    //V22 (HAS-378) over the registry as it is: a device of each of the four bindings keeps it and has no
+    //Gree binding, and so does a row the released version inserts afterwards, not naming the columns -
+    //the check of one binding of five takes what the check of one of four took
+    @Test
+    void should_leave_every_device_without_a_gree_binding_also_one_an_older_release_inserts() {
+        final String schema = "rehearsal_gree";
+        startOver(schema);
+        migrate(schema, "21");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Cinema windows', 'CINEMA', 'BLINDS', 'EATON', true, 'BLINDS', 20)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation)
+            VALUES (now(), 'Kitchen lamp', 'KITCHEN', 'LIGHT', 'SHELLY', true, '192.0.2.65', 1)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, bthome_address)
+            VALUES (now(), 'Garden weather', 'GARDEN', 'WEATHER_STATION', 'OTHER', true, '7c:c6:b6:00:00:01')"""
+            .formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, inverter_brand, inverter_serial_number)
+            VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'OTHER', true, 'SOLAX', 'H1234567890ABC')"""
+            .formatted(schema));
+
+        migrate(schema, "latest");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Office windows', 'OFFICE', 'BLINDS', 'EATON', true, 'BLINDS', 21)""".formatted(schema));
+
+        assertThat(rows("""
+            SELECT num_nonnulls(shelly_address, eaton_gateway, bthome_address, inverter_serial_number) AS bindings,
+                num_nonnulls(gree_address, gree_mac) AS gree
+            FROM %s.devices ORDER BY id""".formatted(schema)))
+            .extracting(device -> device.get("bindings"), device -> device.get("gree"))
+            .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0));
+    }
+
     //the container outlives the test, and with it the schema of an earlier run in the same JVM
     private void startOver(final String schema) {
         execute("DROP SCHEMA IF EXISTS %s CASCADE".formatted(schema));

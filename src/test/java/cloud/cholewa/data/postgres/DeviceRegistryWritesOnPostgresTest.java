@@ -53,6 +53,10 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
          "inverter": {"brand": "sofar", "serialNumber": "S1234567890ABCDEF", "address": "192.0.2.121",
                       "loggerSerial": 1234567890}}""";
 
+    private static final String GREE_UNIT = """
+        {"name": "Air conditioner", "room": "office", "kind": "air conditioner", "vendor": "gree", "enabled": true,
+         "gree": {"address": "192.0.2.59", "mac": "02005e0000a1"}}""";
+
     @Autowired
     private WebTestClient webTestClient;
 
@@ -167,9 +171,9 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             "A Shelly of generation 2 needs its deviceId - the id it reports under over MQTT");
         invalid("""
                 {"name": "Nowhere", "room": "office", "kind": "light", "vendor": "shelly", "enabled": true}""",
-            "A device is reached through exactly one binding - shelly, eaton, bthome or inverter - and this one has none");
+            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter or gree - and this one has none");
         invalid(SHELLY_BLINDS.replace("\"placement\"", "\"bthome\": {\"address\": \"7c:c6:b6:00:00:02\"}, \"placement\""),
-            "A device is reached through exactly one binding - shelly, eaton, bthome or inverter - and this one has shelly and bthome");
+            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter or gree - and this one has shelly and bthome");
         //HAS-260: the model takes 0 to 299, the registry an output or the zone of a presence sensor
         invalid(SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 4"),
             "The channel of a Shelly is an output (0 to 3) or the zone of a presence sensor (200 to 299), not 4");
@@ -713,6 +717,94 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, inverter_serial_number)
             VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'OTHER', true, 'H1234567890ABC')"""))
             .hasMessageContaining("devices_inverter_binding_whole");
+
+        assertThat(count()).isZero();
+    }
+
+    //An air conditioner of Gree (HAS-378): its binding becomes the two columns of V22 and is answered as it
+    //was sent; found by its kind, which is how aircon-service will read it
+    @Test
+    void should_register_a_gree_air_conditioner_and_answer_it_as_it_was_sent() {
+        final long unit = added(GREE_UNIT);
+
+        assertThat(stored(unit))
+            .containsEntry("kind", "AIR_CONDITIONER")
+            .containsEntry("vendor", "GREE")
+            .containsEntry("gree_address", "192.0.2.59")
+            .containsEntry("gree_mac", "02005e0000a1")
+            .containsEntry("shelly_address", null);
+
+        webTestClient.get()
+            .uri("/device/registry?kind=air conditioner")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.length()").isEqualTo(1)
+            .jsonPath("$[0].id").isEqualTo(unit)
+            .jsonPath("$[0].kind").isEqualTo("air conditioner")
+            .jsonPath("$[0].vendor").isEqualTo("gree")
+            .jsonPath("$[0].gree.address").isEqualTo("192.0.2.59")
+            .jsonPath("$[0].gree.mac").isEqualTo("02005e0000a1")
+            .jsonPath("$[0].shelly").doesNotExist();
+    }
+
+    //the MAC is the identity of a unit: a second one is refused by the index of V22
+    @Test
+    void should_refuse_a_gree_unit_registered_twice_by_its_mac() {
+        added(GREE_UNIT);
+
+        conflict(GREE_UNIT.replace("\"name\": \"Air conditioner\"", "\"name\": \"Air conditioner again\"")
+                .replace("192.0.2.59", "192.0.2.60"),
+            "A device is already registered for the Gree unit with the MAC [02005e0000a1]");
+    }
+
+    //the address is reserved for one unit in DHCP: a second unit there would get the commands of the first
+    @Test
+    void should_refuse_a_gree_unit_at_the_address_of_another() {
+        added(GREE_UNIT);
+
+        conflict(GREE_UNIT.replace("02005e0000a1", "02005e0000a2"),
+            "A device is already registered for the Gree unit at [192.0.2.59]");
+    }
+
+    //refused in words: by DeviceRules, and by the model for a MAC not as the unit gives it
+    @Test
+    void should_refuse_a_gree_unit_the_registry_does_not_take_and_say_why() {
+        invalid(GREE_UNIT.replace("\"vendor\": \"gree\"", "\"vendor\": \"other\""),
+            "A device of the vendor [other] is not reached through the binding [gree]");
+        invalid(GREE_UNIT.replace("\"kind\": \"air conditioner\"", "\"kind\": \"light\""),
+            "A device of the kind [light] is not reached through the binding [gree], only through: shelly, eaton");
+
+        webTestClient.post()
+            .uri("/device/registry")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(GREE_UNIT.replace("02005e0000a1", "02:00:5e:00:00:a1"))
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        assertThat(count()).isZero();
+    }
+
+    //the schema keeps the binding to air conditioners of Gree and to the form of the MAC, for a row
+    //written past the API
+    @Test
+    void should_refuse_a_gree_binding_the_schema_does_not_take() {
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, gree_address, gree_mac)
+            VALUES (now(), 'Air conditioner', 'OFFICE', 'LIGHT', 'GREE', true, '192.0.2.59', '02005e0000a1')"""))
+            .hasMessageContaining("devices_gree_of_air_conditioners");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, gree_address, gree_mac)
+            VALUES (now(), 'Air conditioner', 'OFFICE', 'AIR_CONDITIONER', 'OTHER', true, '192.0.2.59', '02005e0000a1')"""))
+            .hasMessageContaining("devices_gree_vendor");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, gree_address, gree_mac)
+            VALUES (now(), 'Air conditioner', 'OFFICE', 'AIR_CONDITIONER', 'GREE', true, '192.0.2.59', '02005E0000A1')"""))
+            .hasMessageContaining("devices_gree_format");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, gree_mac)
+            VALUES (now(), 'Air conditioner', 'OFFICE', 'AIR_CONDITIONER', 'GREE', true, '02005e0000a1')"""))
+            .hasMessageContaining("devices_gree_binding_whole");
 
         assertThat(count()).isZero();
     }
