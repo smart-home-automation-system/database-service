@@ -16,9 +16,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
-//A row of the device registry - the one table of the devices of the house. The four bindings of
-//the SDK model (shelly, eaton, bthome, inverter) are columns of the one row here - exactly one of
-//them is filled, which the schema checks (V13, V20). What may not be null is said there as well: nothing
+//A row of the device registry - the one table of the devices of the house. The five bindings of
+//the SDK model (shelly, eaton, bthome, inverter, gree) are columns of the one row here - exactly one
+//of them is filled, which the schema checks (V13, V20, V22). What may not be null is said there as well: nothing
 //validates an entity, so an annotation here would promise what no code keeps.
 @Value
 @Builder(toBuilder = true)
@@ -69,4 +69,8 @@ public class DeviceEntity {
     String inverterRegistrationNumber;
     Long inverterLoggerSerial;
     String inverterBatterySerialNumber;
+
+    //the Gree binding (V22): both filled for a Gree air conditioner, neither for another device
+    String greeAddress;
+    String greeMac;
 }

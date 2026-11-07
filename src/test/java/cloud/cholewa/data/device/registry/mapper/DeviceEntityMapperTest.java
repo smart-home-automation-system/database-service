@@ -7,6 +7,7 @@ import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
+import cloud.cholewa.home.model.GreeBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.LightKind;
@@ -189,6 +190,7 @@ class DeviceEntityMapperTest {
             .openingSensors(List.of(31L))
             .appliance(APPLIANCE)
             .inverter(EVERY_INVERTER_FIELD)
+            .gree(GreeBinding.builder().address("192.0.2.59").mac("02005e0000a1").build())
             .build();
         final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED).build();
 
@@ -232,6 +234,8 @@ class DeviceEntityMapperTest {
             .inverterRegistrationNumber("SABCDEFGHI")
             .inverterLoggerSerial(1234567890L)
             .inverterBatterySerialNumber("B1234567890ABC")
+            .greeAddress("192.0.2.59")
+            .greeMac("02005e0000a1")
             .build();
 
         final DeviceEntity off = mapper.withEnabled(existing, false);
@@ -294,6 +298,27 @@ class DeviceEntityMapperTest {
                 DeviceEntity::getApplianceReminderEveryMinutes, DeviceEntity::getApplianceMaxReminders,
                 DeviceEntity::getApplianceQuietFrom, DeviceEntity::getApplianceQuietTo)
             .containsOnlyNulls();
+    }
+
+    //An air conditioner of Gree (HAS-378): its binding becomes the two columns gree_*
+    @Test
+    void should_make_a_new_row_of_a_gree_air_conditioner_with_its_binding() {
+        final SmartDevice unit = SmartDevice.builder().name("Air conditioner").room(RoomName.OFFICE)
+            .kind(DeviceKind.AIR_CONDITIONER).vendor(SmartVendor.GREE).enabled(true)
+            .gree(GreeBinding.builder().address("192.0.2.59").mac("02005e0000a1").build())
+            .build();
+
+        assertThat(mapper.toNewEntity(unit)).usingRecursiveComparison().ignoringFields("createdAt")
+            .isEqualTo(DeviceEntity.builder()
+                .name("Air conditioner")
+                .room(RoomName.OFFICE)
+                .kind(DeviceKind.AIR_CONDITIONER)
+                .vendor(SmartVendor.GREE)
+                .enabled(true)
+                .openingSensors(List.of())
+                .greeAddress("192.0.2.59")
+                .greeMac("02005e0000a1")
+                .build());
     }
 
     //An inverter (HAS-326): its binding becomes the six columns inverter_*, the fields left out empty

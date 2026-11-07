@@ -274,10 +274,10 @@ writes of both registries and of the calendar are open to whoever reaches the in
 `device.registry` (HAS-222, `V13`, table `devices`): the devices of the house as `SmartDevice` of
 `smart-home-sdk` >= 1.8.0 - the reads (HAS-222) and the writes (HAS-223, below).
 
-- **A row is flat, the model is nested.** The four bindings (`shelly`, `eaton`, `bthome`, and
-  `inverter` since `V20`) are columns of the one row; exactly one of them is filled. Each is told by
-  the column it cannot do without - `shelly_address`, `eaton_gateway`, `bthome_address`,
-  `inverter_serial_number` - in the check of the schema (`devices_one_binding`) and in the mapper
+- **A row is flat, the model is nested.** The five bindings (`shelly`, `eaton`, `bthome`,
+  `inverter` since `V20` and `gree` since `V22`) are columns of the one row; exactly one of them is filled.
+  Each is told by the column it cannot do without - `shelly_address`, `eaton_gateway`, `bthome_address`,
+  `inverter_serial_number`, `gree_mac` - in the check of the schema (`devices_one_binding`) and in the mapper
   alike. Change one, change the other.
 - **`SmartDeviceMapper` is written by hand, on purpose** - the one mapper here that is not
   MapStruct. MapStruct fills a nested target whenever its source object is there, so every
@@ -390,7 +390,8 @@ writes of both registries and of the calendar are open to whoever reaches the in
     through - `blinds` / `light` / `push button`: shelly, eaton; the four sensors: any; `weather station`:
     bthome; `bthome gateway`: shelly; `appliance`: shelly; `inverter`: inverter (and that binding is of
     this kind alone - the four sensors name their three bindings, not `allOf`); `water valve`: shelly
-    (HAS-311 - of generation 2 or later, on the channel 0, `checkWaterValve`). The switch names every kind, so a kind added to the SDK
+    (HAS-311 - of generation 2 or later, on the channel 0, `checkWaterValve`); `air conditioner`: gree
+    (HAS-378 - and the vendor `gree` with that binding and the other way round, as `eaton`). The switch names every kind, so a kind added to the SDK
     stops the compiler there. The matrix is the service's own reading of "the binding fits
     the vendor and the kind" - the README states it; change both.
   - **A Shelly of generation 2 or later needs its `deviceId`** (owner, 2026-10-12; the SDK
@@ -475,6 +476,25 @@ writes of both registries and of the calendar are open to whoever reaches the in
     only after 0.20.0 runs, and never roll back below it after that.
   - The services read the registry by `?kind=` and never get an inverter; the dashboard reads every
     kind without the SDK and shows an unknown one as it comes.
+- **The Gree binding** (HAS-378, `V22`, SDK 1.18.0, epic HAS-376): an indoor unit of an air conditioner
+  driven by `aircon-service` is the kind `air conditioner`, of the vendor `gree`, reached by `GreeBinding` -
+  two nullable columns `gree_address` and `gree_mac`, told by the MAC.
+  - **The vendor is the binding, both ways**: `gree` is the first vendor a binding belongs to alone since
+    `eaton`, so `DeviceRules` says `(vendor == GREE) == (binding == GREE)` and the schema the same
+    (`devices_gree_vendor`); the kind is the binding too (`devices_gree_of_air_conditioners`). A second
+    maker of air conditioners would open both: another binding for the kind, and the checks of `V22` to
+    replace.
+  - **One device per MAC and one per address** (`devices_gree_mac_uq`, `devices_gree_address_uq` - found by
+    the review: two rows on one address would send the commands of one unit to the other; both mapped to
+    `DEVICE_CONFLICT` by their names). The MAC is
+    the form the unit gives (12 lower-case hex digits) - not the colon-separated form of `bthome` or of the
+    household devices. The key of a unit is never stored: aircon-service binds each unit at its start.
+  - **Rollout and rollback** (rehearsed 2026-11-06 on a throwaway PostgreSQL): the released 0.22.0 reads by
+    kind and writes next to `V22` (its rows have one of four bindings and pass the check of five), but
+    **cannot read an air conditioner**: once one is stored, a read of the whole registry by 0.22.0 answers
+    `500`. Register the units only after 0.23.0 runs, and never roll back below it.
+  - The services read the registry by `?kind=` and never get a unit; the dashboard copies the vendors and
+    `DeviceRules` (`VENDORS`, `device-rules.ts`) and moves before the first unit is registered (HAS-392).
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
@@ -638,7 +658,8 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- SDK **1.17.0** since HAS-409 (`MemberRequest`, additive); 1.16.0 since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` -
+- SDK **1.18.0** since HAS-378 (`DeviceKind.AIR_CONDITIONER`, `GreeBinding`, `SmartVendor.GREE` - `V22`; the
+  release before 0.23.0 cannot read a stored unit); 1.17.0 since HAS-409 (`MemberRequest`, additive); 1.16.0 since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` -
   no migration, the kind column is text; the release before 0.21.0 cannot read a stored valve).
 - `mvn verify` (JDK 21; with a running Docker it also runs the tests on PostgreSQL, below).
   `tidy-maven-plugin:check` runs in `verify`, so after editing the pom run

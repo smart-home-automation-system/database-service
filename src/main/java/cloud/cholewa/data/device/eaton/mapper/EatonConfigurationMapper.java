@@ -84,10 +84,11 @@ public class EatonConfigurationMapper {
                 device.getLightKind() == LightKind.DIMMER ? SmartDeviceType.DIMMER : SmartDeviceType.LIGHT);
             case PUSH_BUTTON -> Optional.of(SmartDeviceType.PUSH_BUTTON);
             case MOTION_SENSOR -> Optional.of(SmartDeviceType.MOTION_SENSOR);
-            //an appliance is a Shelly plug (HAS-272), an inverter is read by energy-service (HAS-326) and the
-            //water valve is a Shelly read by water-service (HAS-311) - never a data point of the AMX system
-            case OPENING_SENSOR, PRESENCE_SENSOR, WEATHER_STATION, BTHOME_GATEWAY, APPLIANCE, INVERTER, WATER_VALVE ->
-                Optional.empty();
+            //an appliance is a Shelly plug (HAS-272), an inverter is read by energy-service (HAS-326), the
+            //water valve is a Shelly read by water-service (HAS-311) and an air conditioner is driven by
+            //aircon-service (HAS-377) - never a data point of the AMX system
+            case OPENING_SENSOR, PRESENCE_SENSOR, WEATHER_STATION, BTHOME_GATEWAY, APPLIANCE, INVERTER, WATER_VALVE,
+                AIR_CONDITIONER -> Optional.empty();
         };
     }
 

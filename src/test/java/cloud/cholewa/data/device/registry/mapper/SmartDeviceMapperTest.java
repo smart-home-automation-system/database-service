@@ -7,6 +7,7 @@ import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
+import cloud.cholewa.home.model.GreeBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.LightKind;
@@ -201,6 +202,25 @@ class SmartDeviceMapperTest {
         assertThat(shelly.getInverter()).isNull();
         assertThat(eaton.getInverter()).isNull();
         assertThat(bthome.getInverter()).isNull();
+    }
+
+    //An air conditioner of Gree (HAS-378): the two columns as its binding, told by the MAC
+    @Test
+    void should_map_a_gree_air_conditioner_with_its_binding() {
+        final DeviceEntity entity = row().id(140L).name("Air conditioner").room(RoomName.OFFICE)
+            .kind(DeviceKind.AIR_CONDITIONER).vendor(SmartVendor.GREE).enabled(true)
+            .greeAddress("192.0.2.59").greeMac("02005e0000a1")
+            .build();
+
+        assertThat(mapper.toDevice(entity)).isEqualTo(SmartDevice.builder()
+            .id(140L)
+            .name("Air conditioner")
+            .room(RoomName.OFFICE)
+            .kind(DeviceKind.AIR_CONDITIONER)
+            .vendor(SmartVendor.GREE)
+            .enabled(true)
+            .gree(GreeBinding.builder().address("192.0.2.59").mac("02005e0000a1").build())
+            .build());
     }
 
     //An inverter (HAS-326): the six columns as its binding, told by the serial number; what a brand

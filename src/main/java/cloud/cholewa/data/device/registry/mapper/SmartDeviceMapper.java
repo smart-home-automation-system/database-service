@@ -4,6 +4,7 @@ import cloud.cholewa.data.device.registry.model.DeviceEntity;
 import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
+import cloud.cholewa.home.model.GreeBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
@@ -37,6 +38,18 @@ public class SmartDeviceMapper {
             .openingSensors(openingSensors(entity))
             .appliance(appliance(entity))
             .inverter(inverter(entity))
+            .gree(gree(entity))
+            .build();
+    }
+
+    //the Gree binding is told by its MAC, whole or absent (V22)
+    private static GreeBinding gree(final DeviceEntity entity) {
+        if (entity.getGreeMac() == null) {
+            return null;
+        }
+        return GreeBinding.builder()
+            .address(entity.getGreeAddress())
+            .mac(entity.getGreeMac())
             .build();
     }
 

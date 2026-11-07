@@ -19,7 +19,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-//What the SDK model leaves open: its four bindings and the fields of one kind only are all
+//What the SDK model leaves open: its five bindings and the fields of one kind only are all
 //optional, and nothing in it ties them to the vendor and the kind of the device. The registry
 //does, here, before a device is stored - the schema (V13) repeats what one row can say of it, and
 //would answer with the name of a constraint where this answers in words.
@@ -39,8 +39,10 @@ final class DeviceRules {
 
         //an Eaton device is reached through a gateway of the AMX system and nothing else is; the
         //binding of a Shelly is a Shelly's. A Bluetooth sensor is of any vendor but Eaton; an
-        //inverter is of none of the vendors the registry names (HAS-326)
+        //inverter is of none of the vendors the registry names (HAS-326). A Gree unit is reached by
+        //the protocol of Gree and nothing else is (HAS-377)
         if ((vendor == SmartVendor.EATON) != (binding == Binding.EATON)
+            || (vendor == SmartVendor.GREE) != (binding == Binding.GREE)
             || (binding == Binding.SHELLY && vendor != SmartVendor.SHELLY)
             || (binding == Binding.INVERTER && vendor != SmartVendor.OTHER)) {
             throw new InvalidDeviceException(
@@ -206,9 +208,12 @@ final class DeviceRules {
         if (device.getInverter() != null) {
             given.add(Binding.INVERTER);
         }
+        if (device.getGree() != null) {
+            given.add(Binding.GREE);
+        }
         if (given.size() != 1) {
             throw new InvalidDeviceException(
-                "A device is reached through exactly one binding - shelly, eaton, bthome or inverter - and this one has "
+                "A device is reached through exactly one binding - shelly, eaton, bthome, inverter or gree - and this one has "
                     + (given.isEmpty() ? "none" : given.stream().map(Binding::toString).collect(Collectors.joining(" and "))));
         }
         return given.getFirst();
@@ -234,12 +239,15 @@ final class DeviceRules {
             case INVERTER -> EnumSet.of(Binding.INVERTER);
             //the water valve of the garage is a Shelly X on the network, read by water-service (HAS-311)
             case WATER_VALVE -> EnumSet.of(Binding.SHELLY);
+            //an air conditioner is an indoor unit driven by aircon-service over the protocol of its
+            //maker - a Gree unit by its address and MAC (HAS-377)
+            case AIR_CONDITIONER -> EnumSet.of(Binding.GREE);
         };
     }
 
     //named as the fields of the model are
     private enum Binding {
-        SHELLY, EATON, BTHOME, INVERTER;
+        SHELLY, EATON, BTHOME, INVERTER, GREE;
 
         @Override
         public String toString() {
