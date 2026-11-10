@@ -80,4 +80,38 @@ public class MemberRequestController {
     Mono<ResponseEntity<Long>> markSent(@RequestBody @Size(max = 500) final List<Long> ids) {
         return memberRequestService.markSent(ids).map(ResponseEntity::ok);
     }
+
+    //HAS-415, the reads of notification-service: the requests ticked off whose authors were not told yet
+    @GetMapping("/household/requests/done-to-announce")
+    Mono<ResponseEntity<List<MemberRequest>>> getDoneToAnnounce() {
+        return memberRequestService.doneToAnnounce().map(ResponseEntity::ok);
+    }
+
+    //the open texted requests of the members switched on - not reminded since remindedBefore, when given
+    @GetMapping("/household/requests/to-remind")
+    Mono<ResponseEntity<List<MemberRequest>>> getToRemind(@RequestParam(required = false) final String remindedBefore) {
+        return memberRequestService.toRemind(remindedBefore).map(ResponseEntity::ok);
+    }
+
+    //the open requests texted before sentBefore whose authors were never told they are still open
+    @GetMapping("/household/requests/stale")
+    Mono<ResponseEntity<List<MemberRequest>>> getStale(@RequestParam(required = false) final String sentBefore) {
+        return memberRequestService.stale(sentBefore).map(ResponseEntity::ok);
+    }
+
+    //HAS-415, the marks of what notification-service sent: the number marked (an id that does not fit is skipped)
+    @PutMapping("/household/requests/reminded")
+    Mono<ResponseEntity<Long>> markReminded(@RequestBody @Size(max = 500) final List<Long> ids) {
+        return memberRequestService.markReminded(ids).map(ResponseEntity::ok);
+    }
+
+    @PutMapping("/household/requests/done-announced")
+    Mono<ResponseEntity<Long>> markDoneAnnounced(@RequestBody @Size(max = 500) final List<Long> ids) {
+        return memberRequestService.markDoneAnnounced(ids).map(ResponseEntity::ok);
+    }
+
+    @PutMapping("/household/requests/stale-announced")
+    Mono<ResponseEntity<Long>> markStaleAnnounced(@RequestBody @Size(max = 500) final List<Long> ids) {
+        return memberRequestService.markStaleAnnounced(ids).map(ResponseEntity::ok);
+    }
 }

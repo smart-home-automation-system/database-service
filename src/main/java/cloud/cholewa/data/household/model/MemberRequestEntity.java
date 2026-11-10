@@ -8,7 +8,8 @@ import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
-//A household request (V21): an errand for the member of memberId. author and doneBy are names as the
+//A household request (V21; the marks of the reminders and the announcements since V23, HAS-415): an errand for
+//the member of memberId. author and doneBy are names as the
 //registry spelled them when written; what may not be null is said by the schema, nothing validates an
 //entity here
 @Value
@@ -26,4 +27,7 @@ public class MemberRequestEntity {
     LocalDateTime sentAt;
     LocalDateTime doneAt;
     String doneBy;
+    LocalDateTime remindedAt;
+    LocalDateTime doneAnnouncedAt;
+    LocalDateTime staleAnnouncedAt;
 }

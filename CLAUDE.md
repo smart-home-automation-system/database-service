@@ -268,6 +268,31 @@ writes of both registries and of the calendar are open to whoever reaches the in
     however old - the rule "once per request, kept until ticked off" (owner, HAS-407). A new request for a
     member switched off is refused (`409 MEMBER_SWITCHED_OFF`).
   - `OnPostgres.emptyTheTables` needs nothing: the rows go with their members (`ON DELETE CASCADE`).
+  - **The reminders and the announcements** (HAS-415, `V23`, SDK 1.19.0, owner 2026-11-10): `notification-service`
+    reminds the recipient at 20:00 while a texted request stays open, tells the author within a minute when
+    it was ticked off and once when it is still open some days after its SMS. This service stores when each
+    was sent (`reminded_at`, `done_announced_at`, `stale_announced_at`) and answers three reads
+    (`done-to-announce`, `to-remind`, `stale`) and three marks (`PUT /household/requests/reminded`,
+    `done-announced`, `stale-announced`) - the rule of `/sent`: each one statement, conditional, an id
+    that does not fit skipped, so a repeat after a cut-off sends nothing twice.
+    - **Ticked off by its own author it is announced at once**, in the same statement as the tick
+      (`markDone`: `CASE WHEN upper(author) = upper(:doneBy)` - the names compared as `V10` keeps them
+      unique). Comparing names is right only because both are the registry spelling of their moment; a
+      rename between the request and the tick makes the author look like somebody else and they are told
+      about their own tick - accepted, the household renames nobody.
+    - **The requests done before `V23` count as announced** (backfilled `done_announced_at = done_at`), so
+      the first minute after the deploy tells nobody about old ticks. Rehearsed on a throwaway PostgreSQL
+      with the released 0.23.0 (2026-11-10): it reads, ticks and adds next to `V23`; what it ticks has no
+      mark and is announced even when its author ticked it - only while the two run side by side.
+    - **The times are read by the service, not by Spring** (`MemberRequestRules.time`): ISO local date and
+      time as a `LocalDateTime` prints it (seconds optional - `toString` drops them at :00), an offset
+      refused rather than dropped (the lesson of the calendar), a refusal `400 INVALID_REQUEST` with the
+      reason. `stale` takes `sentBefore` from `notification-service`, so how many days is its rule, not
+      this service's.
+    - **The retention keeps a done request its author was not told about** (`deleteDoneBefore` asks for
+      `done_announced_at` too): a long silence of `notification-service` loses no announcement.
+    - The reads of `to-remind` and `stale` take the members switched on only, as the pending read;
+      `done-to-announce` takes every done request - the author is told whoever the recipient is now.
 
 ## Device registry - the parts worth knowing before changing anything
 
@@ -658,7 +683,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- SDK **1.18.0** since HAS-378 (`DeviceKind.AIR_CONDITIONER`, `GreeBinding`, `SmartVendor.GREE` - `V22`; the
+- SDK **1.19.0** since HAS-415 (`MemberRequest` marks of the reminders - `V23`, additive); 1.18.0 since HAS-378 (`DeviceKind.AIR_CONDITIONER`, `GreeBinding`, `SmartVendor.GREE` - `V22`; the
   release before 0.23.0 cannot read a stored unit); 1.17.0 since HAS-409 (`MemberRequest`, additive); 1.16.0 since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` -
   no migration, the kind column is text; the release before 0.21.0 cannot read a stored valve).
 - `mvn verify` (JDK 21; with a running Docker it also runs the tests on PostgreSQL, below).

@@ -389,6 +389,38 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0));
     }
 
+    //V23 (HAS-415) over the requests as they are: one done before it counts as announced, so its author is
+    //not told after the deploy; an open one has no mark, and neither has a row the released version inserts
+    //afterwards, not naming the columns
+    @Test
+    void should_count_the_requests_done_before_the_marks_as_announced() {
+        final String schema = "rehearsal_request_marks";
+        startOver(schema);
+        migrate(schema, "22");
+        execute("""
+            INSERT INTO %1$s.household_members (created_at, name, phone, active, role, rooms, permissions)
+            VALUES (now(), 'Anna', '+48111222333', true, 'RESIDENT', '{}', '{}')""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.member_requests (member_id, text, author, created_at, sent_at, done_at, done_by)
+            SELECT id, 'Kup chleb', 'Jan', now(), now(), TIMESTAMP '2026-11-08 09:00', 'Anna'
+            FROM %1$s.household_members""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.member_requests (member_id, text, author, created_at, sent_at)
+            SELECT id, 'Kup mleko', 'Jan', now(), now() FROM %1$s.household_members""".formatted(schema));
+
+        migrate(schema, "latest");
+        execute("""
+            INSERT INTO %1$s.member_requests (member_id, text, author, created_at)
+            SELECT id, 'Wynieś śmieci', 'Jan', now() FROM %1$s.household_members""".formatted(schema));
+
+        assertThat(rows("""
+            SELECT text, CAST(done_announced_at AS TEXT) AS announced, num_nonnulls(reminded_at, stale_announced_at) AS marks
+            FROM %s.member_requests ORDER BY id""".formatted(schema)))
+            .extracting(request -> request.get("text"), request -> request.get("announced"), request -> request.get("marks"))
+            .containsExactly(tuple("Kup chleb", "2026-11-08 09:00:00", 0), tuple("Kup mleko", null, 0),
+                tuple("Wynieś śmieci", null, 0));
+    }
+
     //the container outlives the test, and with it the schema of an earlier run in the same JVM
     private void startOver(final String schema) {
         execute("DROP SCHEMA IF EXISTS %s CASCADE".formatted(schema));

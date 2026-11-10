@@ -2,6 +2,8 @@ package cloud.cholewa.data.household.service;
 
 import cloud.cholewa.data.error.InvalidMemberRequestException;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 
 //What a household request must be (HAS-409) - no I/O, pinned by MemberRequestRulesTest. The body is not
@@ -36,6 +38,23 @@ final class MemberRequestRules {
                 "The text of a request is one line, without a line break, a tab or another control character");
         }
         return text;
+    }
+
+    //HAS-415: a time notification-service sends as a parameter, in the local time of the house - ISO without
+    //an offset, as a LocalDateTime prints (seconds and their fraction optional). An offset is refused rather
+    //than dropped. Null when it is not required and not sent
+    static LocalDateTime time(final String raw, final String what, final boolean required) {
+        if (raw == null || raw.isBlank()) {
+            if (required) {
+                throw new InvalidMemberRequestException("The time " + what + " is required");
+            }
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(raw.strip());
+        } catch (DateTimeParseException invalid) {
+            throw new InvalidMemberRequestException("The time " + what + " is no local date and time: " + raw.strip());
+        }
     }
 
     //a name a client sends for the author or for who ticked a request off; whether it is a member is the
