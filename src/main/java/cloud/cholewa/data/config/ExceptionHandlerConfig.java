@@ -1,6 +1,7 @@
 package cloud.cholewa.data.config;
 
 import cloud.cholewa.commons.error.GlobalErrorExceptionHandler;
+import cloud.cholewa.commons.error.processor.DomainExceptionProcessor;
 import cloud.cholewa.data.error.DayOffNotFoundException;
 import cloud.cholewa.data.error.DeviceConfigurationExistsException;
 import cloud.cholewa.data.error.DeviceConfigurationNotFoundException;
@@ -16,7 +17,6 @@ import cloud.cholewa.data.error.MemberDeviceNotFoundException;
 import cloud.cholewa.data.error.InvalidMemberRequestException;
 import cloud.cholewa.data.error.MemberRequestNotFoundException;
 import cloud.cholewa.data.error.MemberSwitchedOffException;
-import cloud.cholewa.data.error.processor.DomainExceptionProcessor;
 import cloud.cholewa.data.error.processor.InvalidRequestParameterProcessor;
 import org.springframework.boot.autoconfigure.web.WebProperties;
 import org.springframework.boot.webflux.error.ErrorAttributes;
