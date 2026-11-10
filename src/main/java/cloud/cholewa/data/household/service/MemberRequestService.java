@@ -13,6 +13,7 @@ import cloud.cholewa.home.model.MemberRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -21,6 +22,8 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.function.BiFunction;
 
 //The household requests (HAS-409, epic HAS-407): an errand one member writes for another, texted to its
 //recipient once by notification-service at 08:00 and kept until somebody ticks it off. Owner's decisions
@@ -97,19 +100,61 @@ public class MemberRequestService {
     //The read of notification-service: every open request not yet texted of every member switched on, by
     //member and oldest first
     public Mono<List<MemberRequest>> pending() {
-        return memberRequestRepository.findPending()
-            .map(pending -> memberRequestMapper.toMemberRequest(pending.request(), pending.memberName()))
-            .collectList();
+        return answered(memberRequestRepository.findPending());
+    }
+
+    //HAS-415: the requests ticked off whose authors were not told yet, the oldest tick first - notification-
+    //service tells each author and marks them done-announced
+    public Mono<List<MemberRequest>> doneToAnnounce() {
+        return answered(memberRequestRepository.findDoneToAnnounce());
+    }
+
+    //HAS-415: the open texted requests of every member switched on, by member - the evening reminder. With
+    //remindedBefore only those not reminded since then, so a repeat of the same evening reminds nobody twice
+    public Mono<List<MemberRequest>> toRemind(final String remindedBefore) {
+        return Mono.fromCallable(() -> Optional.ofNullable(MemberRequestRules.time(remindedBefore, "remindedBefore", false)))
+            .flatMap(before -> answered(memberRequestRepository.findToRemind(before.orElse(null))));
+    }
+
+    //HAS-415: the open requests texted before sentBefore whose authors were never told they are still open
+    public Mono<List<MemberRequest>> stale(final String sentBefore) {
+        return Mono.fromCallable(() -> MemberRequestRules.time(sentBefore, "sentBefore", true))
+            .flatMap(before -> answered(memberRequestRepository.findStale(before)));
     }
 
     //The requests notification-service texted: sentAt now on those not sent yet - an id sent before or
     //unknown is skipped, so a repeat after a cut-off changes nothing. The number of requests marked
     public Mono<Long> markSent(final List<Long> ids) {
+        return marked(ids, "sent", memberRequestRepository::markSent);
+    }
+
+    //HAS-415: the marks of what notification-service sent, each where it may stand and the announcements once
+    public Mono<Long> markReminded(final List<Long> ids) {
+        return marked(ids, "reminded", memberRequestRepository::markReminded);
+    }
+
+    public Mono<Long> markDoneAnnounced(final List<Long> ids) {
+        return marked(ids, "announced done", memberRequestRepository::markDoneAnnounced);
+    }
+
+    public Mono<Long> markStaleAnnounced(final List<Long> ids) {
+        return marked(ids, "announced still open", memberRequestRepository::markStaleAnnounced);
+    }
+
+    private Mono<List<MemberRequest>> answered(final Flux<MemberRequestRepository.PendingRequest> rows) {
+        return rows
+            .map(row -> memberRequestMapper.toMemberRequest(row.request(), row.memberName()))
+            .collectList();
+    }
+
+    private Mono<Long> marked(final List<Long> ids, final String what,
+                              final BiFunction<List<Long>, LocalDateTime, Mono<Long>> mark) {
         return Mono.justOrEmpty(ids)
             .filter(list -> !list.isEmpty() && list.stream().noneMatch(Objects::isNull))
-            .switchIfEmpty(Mono.error(() -> new InvalidMemberRequestException("The ids of the requests sent are required")))
-            .flatMap(list -> Mono.defer(() -> memberRequestRepository.markSent(list, now())))
-            .doOnNext(marked -> log.info("Marked {} of {} household request(s) as sent", marked, ids.size()));
+            .switchIfEmpty(Mono.error(() -> new InvalidMemberRequestException(
+                "The ids of the requests " + what + " are required")))
+            .flatMap(list -> Mono.defer(() -> mark.apply(list, now())))
+            .doOnNext(marked -> log.info("Marked {} of {} household request(s) as {}", marked, ids.size(), what));
     }
 
     private Mono<HouseholdMemberEntity> findMember(final String name) {

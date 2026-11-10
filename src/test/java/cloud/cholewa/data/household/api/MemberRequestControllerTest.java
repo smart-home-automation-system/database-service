@@ -8,6 +8,8 @@ import cloud.cholewa.data.error.MemberSwitchedOffException;
 import cloud.cholewa.data.household.service.MemberRequestService;
 import cloud.cholewa.home.model.MemberRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
@@ -177,11 +179,57 @@ class MemberRequestControllerTest {
             .expectBody().json("1");
     }
 
+    //HAS-415: the reads of notification-service; the times are handed over as sent, the service reads them
     @Test
-    void should_refuse_more_than_five_hundred_ids_at_once() {
+    void should_answer_the_reads_of_the_reminders_and_the_announcements() {
+        when(memberRequestService.doneToAnnounce()).thenReturn(Mono.just(List.of(STORED)));
+        when(memberRequestService.toRemind("2026-11-10T00:00")).thenReturn(Mono.just(List.of(STORED)));
+        when(memberRequestService.toRemind(null)).thenReturn(Mono.just(List.of()));
+        when(memberRequestService.stale("2026-11-07T20:00")).thenReturn(Mono.just(List.of(STORED)));
+
+        webTestClient.get().uri("/household/requests/done-to-announce").exchange()
+            .expectStatus().isOk().expectBody().jsonPath("$[0].member").isEqualTo("Anna");
+        webTestClient.get().uri("/household/requests/to-remind?remindedBefore=2026-11-10T00:00").exchange()
+            .expectStatus().isOk().expectBody().jsonPath("$[0].id").isEqualTo(7);
+        webTestClient.get().uri("/household/requests/to-remind").exchange()
+            .expectStatus().isOk().expectBody().json("[]");
+        webTestClient.get().uri("/household/requests/stale?sentBefore=2026-11-07T20:00").exchange()
+            .expectStatus().isOk().expectBody().jsonPath("$[0].text").isEqualTo("Kup chleb");
+    }
+
+    @Test
+    void should_answer_a_time_the_service_refuses_with_the_code() {
+        when(memberRequestService.stale(null)).thenReturn(Mono.error(new InvalidMemberRequestException("The time sentBefore is required")));
+
+        webTestClient.get().uri("/household/requests/stale").exchange()
+            .expectStatus().isBadRequest()
+            .expectBody().jsonPath("$.errors[0].code").isEqualTo("INVALID_REQUEST");
+    }
+
+    @Test
+    void should_mark_the_reminders_and_the_announcements_and_answer_the_number() {
+        when(memberRequestService.markReminded(List.of(7L))).thenReturn(Mono.just(1L));
+        when(memberRequestService.markDoneAnnounced(List.of(8L))).thenReturn(Mono.just(1L));
+        when(memberRequestService.markStaleAnnounced(List.of(9L))).thenReturn(Mono.just(0L));
+
+        for (String[] mark : new String[][] {{"reminded", "[7]", "1"}, {"done-announced", "[8]", "1"},
+            {"stale-announced", "[9]", "0"}}) {
+            webTestClient.put().uri("/household/requests/" + mark[0])
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(mark[1])
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().json(mark[2]);
+        }
+    }
+
+    //every mark of notification-service, the ones of HAS-415 too
+    @ParameterizedTest
+    @ValueSource(strings = {"sent", "reminded", "done-announced", "stale-announced"})
+    void should_refuse_more_than_five_hundred_ids_at_once(final String mark) {
         final String ids = LongStream.rangeClosed(1, 501).mapToObj(Long::toString).toList().toString();
 
-        webTestClient.put().uri("/household/requests/sent")
+        webTestClient.put().uri("/household/requests/" + mark)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(ids)
             .exchange()

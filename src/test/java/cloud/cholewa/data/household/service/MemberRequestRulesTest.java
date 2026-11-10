@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.LocalDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -48,5 +50,31 @@ class MemberRequestRulesTest {
         assertThat(MemberRequestRules.name(" Anna ", "author")).isEqualTo("Anna");
         assertThatThrownBy(() -> MemberRequestRules.name(null, "author")).hasMessage("The author of a request is required");
         assertThatThrownBy(() -> MemberRequestRules.name(" ", "author")).hasMessage("The author of a request is required");
+    }
+
+    //HAS-415: the times of notification-service as a LocalDateTime prints them - seconds and their fraction
+    //optional - and an offset refused, never dropped
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-11-10T00:00", "2026-11-10T00:00:00", "2026-11-10T00:00:00.123456", " 2026-11-10T00:00 "})
+    void should_read_a_local_date_and_time(final String raw) {
+        assertThat(MemberRequestRules.time(raw, "sentBefore", true)).isEqualTo(LocalDateTime.of(2026, 11, 10, 0, 0, 0,
+            raw.contains(".") ? 123_456_000 : 0));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-11-10", "2026-11-10T00:00+01:00", "2026-11-10T00:00Z", "2026-02-30T00:00", "today"})
+    void should_refuse_what_is_no_local_date_and_time(final String raw) {
+        assertThatThrownBy(() -> MemberRequestRules.time(raw, "sentBefore", true))
+            .isInstanceOf(InvalidMemberRequestException.class)
+            .hasMessage("The time sentBefore is no local date and time: " + raw);
+    }
+
+    @Test
+    void should_require_a_time_only_when_asked() {
+        assertThat(MemberRequestRules.time(null, "remindedBefore", false)).isNull();
+        assertThat(MemberRequestRules.time(" ", "remindedBefore", false)).isNull();
+        assertThatThrownBy(() -> MemberRequestRules.time(null, "sentBefore", true))
+            .isInstanceOf(InvalidMemberRequestException.class)
+            .hasMessage("The time sentBefore is required");
     }
 }

@@ -11,10 +11,12 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 //The household requests (HAS-409, V21) on a real PostgreSQL, through the API: the list of a member, ticking
 //off once, the read of notification-service and marking what it texted, the retention on write, what a
-//rename and a removal of a member leave behind, and the checks of the schema.
+//rename and a removal of a member leave behind, and the checks of the schema. Since HAS-415 (V23) the reads
+//and the marks of the evening reminders and of what an author is told.
 class MemberRequestsOnPostgresTest extends OnPostgres {
 
     @Autowired
@@ -118,18 +120,24 @@ class MemberRequestsOnPostgresTest extends OnPostgres {
             .expectBody().jsonPath("$.errors[0].code").isEqualTo("INVALID_REQUEST");
     }
 
-    //the retention without a scheduler: a request done more than 30 days ago goes with the next write
+    //the retention without a scheduler: a request done more than 30 days ago goes with the next write - once
+    //its author was told (HAS-415)
     @Test
     void should_delete_the_requests_done_more_than_thirty_days_ago_with_the_next_write() {
         final long old = idOf(add("Anna", "Kup chleb", "Jan"));
         final long recent = idOf(add("Anna", "Kup mleko", "Jan"));
-        execute("UPDATE member_requests SET done_at = now() - interval '31 days', done_by = 'Jan' WHERE id = " + old);
-        execute("UPDATE member_requests SET done_at = now() - interval '29 days', done_by = 'Jan' WHERE id = " + recent);
+        final long unannounced = idOf(add("Anna", "Odbierz paczkę", "Jan"));
+        execute("UPDATE member_requests SET done_at = now() - interval '31 days', done_by = 'Jan',"
+            + " done_announced_at = now() WHERE id = " + old);
+        execute("UPDATE member_requests SET done_at = now() - interval '29 days', done_by = 'Jan',"
+            + " done_announced_at = now() WHERE id = " + recent);
+        execute("UPDATE member_requests SET done_at = now() - interval '31 days', done_by = 'Anna' WHERE id = " + unannounced);
 
         add("Anna", "Wynieś śmieci", "Jan").expectStatus().isCreated();
 
         assertThat(rows("SELECT id FROM member_requests WHERE id = " + old)).isEmpty();
         assertThat(rows("SELECT id FROM member_requests WHERE id = " + recent)).hasSize(1);
+        assertThat(rows("SELECT id FROM member_requests WHERE id = " + unannounced)).hasSize(1);
     }
 
     //the list follows its member by id through a rename, and goes with a member removed
@@ -170,6 +178,103 @@ class MemberRequestsOnPostgresTest extends OnPostgres {
             INSERT INTO member_requests (member_id, text, author, created_at)
             SELECT id, 'Kup chleb', 'Jo', now() FROM household_members WHERE name = 'Anna'"""))
             .hasMessageContaining("member_requests_names");
+    }
+
+    //HAS-415: ticked off by its own author it is announced at once, by anybody else it waits for
+    //notification-service - and once marked it is never answered again
+    @Test
+    void should_announce_a_request_ticked_off_by_another_member_once_and_never_one_of_its_own_author() {
+        final long byOther = idOf(add("Anna", "Kup chleb", "Jan"));
+        final long byAuthor = idOf(add("Anna", "Kup mleko", "Jan"));
+        final long open = idOf(add("Anna", "Wynieś śmieci", "Jan"));
+        done("Anna", byOther, "Anna").expectStatus().isOk();
+        done("Anna", byAuthor, "JAN").expectStatus().isOk().expectBody().jsonPath("$.doneAnnouncedAt").exists();
+
+        assertThat(read("/household/requests/done-to-announce")).extracting(request -> request.get("text"),
+            request -> request.get("member"), request -> request.get("doneBy"))
+            .containsExactly(tuple("Kup chleb", "Anna", "Anna"));
+
+        mark("done-announced", List.of(byOther, byAuthor, open, 999_999L)).expectBody().json("1");
+        mark("done-announced", List.of(byOther)).expectBody().json("0");
+        assertThat(read("/household/requests/done-to-announce")).isEmpty();
+        assertThat(row("SELECT done_announced_at FROM member_requests WHERE id = " + open))
+            .containsEntry("done_announced_at", null);
+    }
+
+    //HAS-415: the open texted requests of the members switched on; with remindedBefore only those not
+    //reminded since then. The mark moves on with every evening and skips a request done or never texted
+    @Test
+    void should_answer_the_requests_to_remind_and_mark_the_reminder() {
+        final long texted = idOf(add("Anna", "Kup chleb", "Jan"));
+        final long notTexted = idOf(add("Anna", "Kup mleko", "Jan"));
+        final long done = idOf(add("Jan", "Odbierz paczkę", "Anna"));
+        sent(List.of(texted, done)).expectBody().json("2");
+        done("Jan", done, "Jan").expectStatus().isOk();
+
+        assertThat(texts(read("/household/requests/to-remind"))).containsExactly("Kup chleb");
+
+        mark("reminded", List.of(texted, notTexted, done)).expectBody().json("1");
+        assertThat(texts(read("/household/requests/to-remind?remindedBefore=2000-01-01T00:00"))).isEmpty();
+        assertThat(texts(read("/household/requests/to-remind?remindedBefore=2999-01-01T00:00"))).containsExactly("Kup chleb");
+        assertThat(texts(read("/household/requests/to-remind"))).containsExactly("Kup chleb");
+
+        webTestClient.post().uri("/household/member/Anna/deactivate").exchange().expectStatus().isOk();
+        assertThat(read("/household/requests/to-remind")).isEmpty();
+    }
+
+    //HAS-415: open, texted before the time given, its author never told - and told once
+    @Test
+    void should_answer_the_stale_requests_once() {
+        final long old = idOf(add("Anna", "Kup chleb", "Jan"));
+        final long recent = idOf(add("Anna", "Kup mleko", "Jan"));
+        final long oldDone = idOf(add("Anna", "Wynieś śmieci", "Jan"));
+        sent(List.of(old, recent, oldDone)).expectBody().json("3");
+        execute("UPDATE member_requests SET sent_at = now() - interval '4 days' WHERE id IN (" + old + ", " + oldDone + ")");
+        done("Anna", oldDone, "Anna").expectStatus().isOk();
+
+        final String sentBefore = "/household/requests/stale?sentBefore=" + java.time.LocalDateTime.now().minusDays(3)
+            .withNano(0);
+        assertThat(read(sentBefore)).extracting(request -> request.get("text"), request -> request.get("author"))
+            .containsExactly(tuple("Kup chleb", "Jan"));
+
+        mark("stale-announced", List.of(old)).expectBody().json("1");
+        mark("stale-announced", List.of(old)).expectBody().json("0");
+        assertThat(read(sentBefore)).isEmpty();
+        webTestClient.get().uri("/household/requests/stale").exchange().expectStatus().isBadRequest()
+            .expectBody().jsonPath("$.errors[0].code").isEqualTo("INVALID_REQUEST");
+    }
+
+    //the check of V23 holds past the API too: a mark only where it may stand
+    @Test
+    void should_refuse_a_mark_in_the_schema_where_it_cannot_stand() {
+        final long open = idOf(add("Anna", "Kup chleb", "Jan"));
+
+        assertThatThrownBy(() -> execute("UPDATE member_requests SET done_announced_at = now() WHERE id = " + open))
+            .hasMessageContaining("member_requests_marks");
+        assertThatThrownBy(() -> execute("UPDATE member_requests SET reminded_at = now() WHERE id = " + open))
+            .hasMessageContaining("member_requests_marks");
+        assertThatThrownBy(() -> execute("UPDATE member_requests SET stale_announced_at = now() WHERE id = " + open))
+            .hasMessageContaining("member_requests_marks");
+    }
+
+    private WebTestClient.ResponseSpec mark(final String what, final List<Long> ids) {
+        return webTestClient.put()
+            .uri("/household/requests/" + what)
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(ids)
+            .exchange()
+            .expectStatus().isOk();
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private List<Map<String, Object>> read(final String uri) {
+        return (List) webTestClient.get()
+            .uri(uri)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBodyList(Map.class)
+            .returnResult()
+            .getResponseBody();
     }
 
     private void member(final String name, final String phone) {

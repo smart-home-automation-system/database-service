@@ -24,6 +24,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -208,5 +209,57 @@ class MemberRequestServiceTest {
         sut.markSent(List.of()).as(StepVerifier::create).expectError(InvalidMemberRequestException.class).verify();
         sut.markSent(null).as(StepVerifier::create).expectError(InvalidMemberRequestException.class).verify();
         sut.markSent(Arrays.asList(7L, null)).as(StepVerifier::create).expectError(InvalidMemberRequestException.class).verify();
+    }
+
+    //HAS-415: the three reads of notification-service, each with the names of the members
+    @Test
+    void should_answer_the_done_requests_to_announce() {
+        when(requests.findDoneToAnnounce()).thenReturn(Flux.just(new PendingRequest(row(7), "Anna")));
+
+        sut.doneToAnnounce().as(StepVerifier::create)
+            .assertNext(list -> assertThat(list).extracting(MemberRequest::getId, MemberRequest::getMember)
+                .containsExactly(tuple(7L, "Anna")))
+            .verifyComplete();
+    }
+
+    @Test
+    void should_answer_the_requests_to_remind_since_the_time_given_or_all() {
+        when(requests.findToRemind(LocalDateTime.of(2026, 11, 10, 0, 0))).thenReturn(Flux.just(new PendingRequest(row(7), "Anna")));
+        when(requests.findToRemind(null)).thenReturn(Flux.just(new PendingRequest(row(7), "Anna"),
+            new PendingRequest(row(8), "Jan")));
+
+        sut.toRemind("2026-11-10T00:00").as(StepVerifier::create)
+            .assertNext(list -> assertThat(list).extracting(MemberRequest::getId).containsExactly(7L))
+            .verifyComplete();
+        sut.toRemind(null).as(StepVerifier::create)
+            .assertNext(list -> assertThat(list).extracting(MemberRequest::getId).containsExactly(7L, 8L))
+            .verifyComplete();
+        sut.toRemind("yesterday").as(StepVerifier::create).expectError(InvalidMemberRequestException.class).verify();
+    }
+
+    @Test
+    void should_answer_the_stale_requests_and_require_the_time() {
+        when(requests.findStale(LocalDateTime.of(2026, 11, 7, 20, 0))).thenReturn(Flux.just(new PendingRequest(row(7), "Anna")));
+
+        sut.stale("2026-11-07T20:00").as(StepVerifier::create)
+            .assertNext(list -> assertThat(list).extracting(MemberRequest::getId).containsExactly(7L))
+            .verifyComplete();
+        sut.stale(null).as(StepVerifier::create).expectError(InvalidMemberRequestException.class).verify();
+        verify(requests, never()).findStale(isNull());
+    }
+
+    @Test
+    void should_mark_the_reminders_and_the_announcements_and_refuse_no_ids() {
+        when(requests.markReminded(eq(List.of(7L)), any())).thenReturn(Mono.just(1L));
+        when(requests.markDoneAnnounced(eq(List.of(8L)), any())).thenReturn(Mono.just(1L));
+        when(requests.markStaleAnnounced(eq(List.of(9L)), any())).thenReturn(Mono.just(0L));
+
+        sut.markReminded(List.of(7L)).as(StepVerifier::create).expectNext(1L).verifyComplete();
+        sut.markDoneAnnounced(List.of(8L)).as(StepVerifier::create).expectNext(1L).verifyComplete();
+        sut.markStaleAnnounced(List.of(9L)).as(StepVerifier::create).expectNext(0L).verifyComplete();
+        sut.markReminded(List.of()).as(StepVerifier::create).expectError(InvalidMemberRequestException.class).verify();
+        sut.markDoneAnnounced(null).as(StepVerifier::create).expectError(InvalidMemberRequestException.class).verify();
+        sut.markStaleAnnounced(Arrays.asList(9L, null)).as(StepVerifier::create)
+            .expectError(InvalidMemberRequestException.class).verify();
     }
 }
