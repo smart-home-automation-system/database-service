@@ -606,7 +606,8 @@ query ran, could not match and answered 404 — a bad request presented as a mis
 ## Error handling
 
 `ExceptionHandlerConfig` registers `cholewa-commons`' `GlobalErrorExceptionHandler` with **one
-line per domain exception**: `new DomainExceptionProcessor(status, CustomErrorDescription)`
+line per domain exception**: `new DomainExceptionProcessor(status, CustomErrorDescription)` - the class of
+`cholewa-commons` since 1.14.0 (HAS-214; written here in HAS-175, moved to the library in HAS-213)
 (HAS-175; seven near-identical processor classes before). The response is `message` = the
 constant's description, `details` = the exception message (left out for a 5xx, whose message
 is internal — it goes to the log with the stack trace instead), `code` = the constant's **name**
@@ -692,7 +693,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `<dependencyManagement>` is gone since logbook 4.2.0 (with Boot 4.1.1, HAS-145), which
   declares the version JUnit 6 does; should the two disagree again, pin it — do not exclude it.
 - logbook needs the optional `spring-boot-http-client` module on Boot 4.1 (already declared).
-- **`cholewa-commons` 1.13.0** (HAS-311; 1.12.0 since HAS-276, 1.11.0 since HAS-272, from 1.9.0; 1.12.0 and 1.13.0 add publishers not used here): Logbook runs as a WebFilter in the reactive
+- **`cholewa-commons` 1.14.0** (HAS-214: `DomainExceptionProcessor`; 1.13.0 since HAS-311, 1.12.0 since HAS-276, 1.11.0 since HAS-272, from 1.9.0; 1.12.0 and 1.13.0 add publishers not used here): Logbook runs as a WebFilter in the reactive
   chain, so its lines carry the `traceId` (1.10.0), and the actuator is left out of its log
   (1.10.1). This service has no `WebClient`, no own `LogbookClientHandler` and no `@Scheduled`
   task, so nothing else of 1.10.0 / 1.11.0 applies here.
