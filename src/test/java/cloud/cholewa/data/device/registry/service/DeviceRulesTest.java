@@ -2,6 +2,7 @@ package cloud.cholewa.data.device.registry.service;
 
 import cloud.cholewa.data.error.InvalidDeviceException;
 import cloud.cholewa.home.model.ApplianceSettings;
+import cloud.cholewa.home.model.BleboxBinding;
 import cloud.cholewa.home.model.BlindsPlacement;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
@@ -39,6 +40,8 @@ class DeviceRulesTest {
         .brand(InverterBrand.SOLAX).serialNumber("H1234567890ABC").address("192.0.2.120")
         .registrationNumber("SABCDEFGHI").batterySerialNumber("B1234567890ABC").build();
     private static final GreeBinding GREE = GreeBinding.builder().address("192.0.2.59").mac("02005e0000a1").build();
+    private static final BleboxBinding BLEBOX = BleboxBinding.builder().address("192.0.2.23").deviceId("0123456789ab")
+        .build();
 
     //every pair of a kind and a binding the house may have, with the vendor the binding is of
     @ParameterizedTest
@@ -62,7 +65,8 @@ class DeviceRulesTest {
         "PUSH_BUTTON, EATON, eaton",
         "PUSH_BUTTON, SHELLY, shelly",
         "MOTION_SENSOR, EATON, eaton",
-        "AIR_CONDITIONER, GREE, gree"
+        "AIR_CONDITIONER, GREE, gree",
+        "AIR_QUALITY_SENSOR, BLEBOX, blebox"
     })
     void should_take_a_device_whose_binding_fits_its_vendor_and_its_kind(
         final DeviceKind kind, final SmartVendor vendor, final String binding
@@ -125,7 +129,7 @@ class DeviceRulesTest {
 
     @ParameterizedTest
     @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY", "APPLIANCE", "INVERTER",
-        "WATER_VALVE", "AIR_CONDITIONER"}, mode = EnumSource.Mode.EXCLUDE)
+        "WATER_VALVE", "AIR_CONDITIONER", "AIR_QUALITY_SENSOR"}, mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_way_a_light_is_driven_on_anything_but_a_light(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.EATON, "eaton").lightKind(LightKind.DIMMER).build();
 
@@ -266,11 +270,13 @@ class DeviceRulesTest {
             case WEATHER_STATION -> "bthome";
             case INVERTER -> "inverter";
             case AIR_CONDITIONER -> "gree";
+            case AIR_QUALITY_SENSOR -> "blebox";
             default -> "shelly";
         };
         final SmartVendor vendor = switch (kind) {
             case INVERTER -> SmartVendor.OTHER;
             case AIR_CONDITIONER -> SmartVendor.GREE;
+            case AIR_QUALITY_SENSOR -> SmartVendor.BLEBOX;
             default -> SmartVendor.SHELLY;
         };
         final SmartDevice device = device(kind, vendor, binding).openingSensors(List.of(31L)).build();
@@ -331,7 +337,8 @@ class DeviceRulesTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DeviceKind.class, names = {"APPLIANCE", "WEATHER_STATION", "INVERTER", "AIR_CONDITIONER"},
+    @EnumSource(value = DeviceKind.class, names = {"APPLIANCE", "WEATHER_STATION", "INVERTER", "AIR_CONDITIONER",
+        "AIR_QUALITY_SENSOR"},
         mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_settings_of_an_appliance_on_another_kind(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.SHELLY, "shelly").appliance(APPLIANCE).build();
@@ -422,8 +429,8 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(inverter))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter or gree - and this one"
-                + " has bthome and inverter");
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this"
+                + " one has bthome and inverter");
     }
 
     @Test
@@ -570,8 +577,58 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(unit))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter or gree - and this"
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this"
                 + " one has shelly and gree");
+    }
+
+    //An air quality sensor of BleBox (HAS-424 / HAS-425) is reached by its own binding, and only a BleBox sensor is
+    @Test
+    void should_take_a_blebox_air_quality_sensor_with_its_address_and_id() {
+        assertThatCode(() -> DeviceRules.check(device(DeviceKind.AIR_QUALITY_SENSOR, SmartVendor.BLEBOX, "blebox").build()))
+            .doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SmartVendor.class, names = "BLEBOX", mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_the_blebox_binding_of_another_vendor(final SmartVendor vendor) {
+        final SmartDevice sensor = device(DeviceKind.AIR_QUALITY_SENSOR, vendor, "blebox").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(sensor))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the vendor [" + vendor.getValue() + "] is not reached through the binding [blebox]");
+    }
+
+    //the vendor BleBox is reached by its own API and nothing else: not a Shelly, a Bluetooth, an inverter or a Gree binding
+    @ParameterizedTest
+    @CsvSource({"shelly", "bthome", "inverter", "gree"})
+    void should_refuse_a_blebox_device_reached_through_another_binding(final String binding) {
+        final SmartDevice sensor = device(DeviceKind.AIR_QUALITY_SENSOR, SmartVendor.BLEBOX, binding).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(sensor))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the vendor [blebox] is not reached through the binding [" + binding + "]");
+    }
+
+    //an air quality sensor is its binding: no other kind is reached by it - a vendor blebox of another kind included
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = "AIR_QUALITY_SENSOR", mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_the_blebox_binding_on_another_kind(final DeviceKind kind) {
+        final SmartDevice device = device(kind, SmartVendor.BLEBOX, "blebox").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessageStartingWith("A device of the kind [" + kind.getValue() + "] is not reached through the binding [blebox]");
+    }
+
+    //a BleBox sensor without its binding is told what it has instead
+    @Test
+    void should_refuse_an_air_quality_sensor_without_its_binding() {
+        final SmartDevice sensor = device(DeviceKind.AIR_QUALITY_SENSOR, SmartVendor.BLEBOX, "none").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(sensor))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this"
+                + " one has none");
     }
 
     private static ApplianceSettings.ApplianceSettingsBuilder<?, ?> appliance() {
@@ -593,6 +650,7 @@ class DeviceRulesTest {
             .eaton("eaton".equals(binding) ? EATON : null)
             .bthome("bthome".equals(binding) ? BTHOME : null)
             .inverter("inverter".equals(binding) ? INVERTER : null)
-            .gree("gree".equals(binding) ? GREE : null);
+            .gree("gree".equals(binding) ? GREE : null)
+            .blebox("blebox".equals(binding) ? BLEBOX : null);
     }
 }

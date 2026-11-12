@@ -57,6 +57,10 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
         {"name": "Air conditioner", "room": "office", "kind": "air conditioner", "vendor": "gree", "enabled": true,
          "gree": {"address": "192.0.2.59", "mac": "02005e0000a1"}}""";
 
+    private static final String BLEBOX_SENSOR = """
+        {"name": "Air sensor", "room": "garden", "kind": "air quality sensor", "vendor": "blebox", "enabled": true,
+         "blebox": {"address": "192.0.2.23", "deviceId": "0123456789ab"}}""";
+
     @Autowired
     private WebTestClient webTestClient;
 
@@ -171,9 +175,9 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             "A Shelly of generation 2 needs its deviceId - the id it reports under over MQTT");
         invalid("""
                 {"name": "Nowhere", "room": "office", "kind": "light", "vendor": "shelly", "enabled": true}""",
-            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter or gree - and this one has none");
+            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this one has none");
         invalid(SHELLY_BLINDS.replace("\"placement\"", "\"bthome\": {\"address\": \"7c:c6:b6:00:00:02\"}, \"placement\""),
-            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter or gree - and this one has shelly and bthome");
+            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this one has shelly and bthome");
         //HAS-260: the model takes 0 to 299, the registry an output or the zone of a presence sensor
         invalid(SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 4"),
             "The channel of a Shelly is an output (0 to 3) or the zone of a presence sensor (200 to 299), not 4");
@@ -805,6 +809,94 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, gree_mac)
             VALUES (now(), 'Air conditioner', 'OFFICE', 'AIR_CONDITIONER', 'GREE', true, '02005e0000a1')"""))
             .hasMessageContaining("devices_gree_binding_whole");
+
+        assertThat(count()).isZero();
+    }
+
+    //An air quality sensor of BleBox (HAS-425): its binding becomes the two columns of V24 and is answered as it
+    //was sent; found by its kind, which is how weather-service will read it
+    @Test
+    void should_register_a_blebox_air_quality_sensor_and_answer_it_as_it_was_sent() {
+        final long sensor = added(BLEBOX_SENSOR);
+
+        assertThat(stored(sensor))
+            .containsEntry("kind", "AIR_QUALITY_SENSOR")
+            .containsEntry("vendor", "BLEBOX")
+            .containsEntry("blebox_address", "192.0.2.23")
+            .containsEntry("blebox_device_id", "0123456789ab")
+            .containsEntry("shelly_address", null);
+
+        webTestClient.get()
+            .uri("/device/registry?kind=air quality sensor")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.length()").isEqualTo(1)
+            .jsonPath("$[0].id").isEqualTo(sensor)
+            .jsonPath("$[0].kind").isEqualTo("air quality sensor")
+            .jsonPath("$[0].vendor").isEqualTo("blebox")
+            .jsonPath("$[0].blebox.address").isEqualTo("192.0.2.23")
+            .jsonPath("$[0].blebox.deviceId").isEqualTo("0123456789ab")
+            .jsonPath("$[0].shelly").doesNotExist();
+    }
+
+    //the id of GET /info is the identity of a sensor: a second one is refused by the index of V24
+    @Test
+    void should_refuse_a_blebox_device_registered_twice_by_its_id() {
+        added(BLEBOX_SENSOR);
+
+        conflict(BLEBOX_SENSOR.replace("\"name\": \"Air sensor\"", "\"name\": \"Air sensor again\"")
+                .replace("192.0.2.23", "192.0.2.24"),
+            "A device is already registered for the BleBox device with the id [0123456789ab]");
+    }
+
+    //the address is reserved for one sensor in DHCP: a second one there would read the first as two
+    @Test
+    void should_refuse_a_blebox_device_at_the_address_of_another() {
+        added(BLEBOX_SENSOR);
+
+        conflict(BLEBOX_SENSOR.replace("0123456789ab", "0123456789ac"),
+            "A device is already registered for the BleBox device at [192.0.2.23]");
+    }
+
+    //refused in words: by DeviceRules, and by the model for an id not as the sensor gives it
+    @Test
+    void should_refuse_a_blebox_device_the_registry_does_not_take_and_say_why() {
+        invalid(BLEBOX_SENSOR.replace("\"vendor\": \"blebox\"", "\"vendor\": \"other\""),
+            "A device of the vendor [other] is not reached through the binding [blebox]");
+        invalid(BLEBOX_SENSOR.replace("\"kind\": \"air quality sensor\"", "\"kind\": \"light\""),
+            "A device of the kind [light] is not reached through the binding [blebox], only through: shelly, eaton");
+
+        webTestClient.post()
+            .uri("/device/registry")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(BLEBOX_SENSOR.replace("0123456789ab", "0123456789AB"))
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        assertThat(count()).isZero();
+    }
+
+    //the schema keeps the binding to air quality sensors of BleBox and to the form of the id, for a row
+    //written past the API
+    @Test
+    void should_refuse_a_blebox_binding_the_schema_does_not_take() {
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, blebox_address, blebox_device_id)
+            VALUES (now(), 'Air sensor', 'GARDEN', 'LIGHT', 'BLEBOX', true, '192.0.2.23', '0123456789ab')"""))
+            .hasMessageContaining("devices_blebox_of_air_quality_sensors");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, blebox_address, blebox_device_id)
+            VALUES (now(), 'Air sensor', 'GARDEN', 'AIR_QUALITY_SENSOR', 'OTHER', true, '192.0.2.23', '0123456789ab')"""))
+            .hasMessageContaining("devices_blebox_vendor");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, blebox_address, blebox_device_id)
+            VALUES (now(), 'Air sensor', 'GARDEN', 'AIR_QUALITY_SENSOR', 'BLEBOX', true, '192.0.2.23', '0123456789AB')"""))
+            .hasMessageContaining("devices_blebox_format");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, blebox_device_id)
+            VALUES (now(), 'Air sensor', 'GARDEN', 'AIR_QUALITY_SENSOR', 'BLEBOX', true, '0123456789ab')"""))
+            .hasMessageContaining("devices_blebox_binding_whole");
 
         assertThat(count()).isZero();
     }

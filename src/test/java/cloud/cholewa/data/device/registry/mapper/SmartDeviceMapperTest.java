@@ -3,6 +3,7 @@ package cloud.cholewa.data.device.registry.mapper;
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
 import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BlindsPlacement;
+import cloud.cholewa.home.model.BleboxBinding;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
@@ -220,6 +221,25 @@ class SmartDeviceMapperTest {
             .vendor(SmartVendor.GREE)
             .enabled(true)
             .gree(GreeBinding.builder().address("192.0.2.59").mac("02005e0000a1").build())
+            .build());
+    }
+
+    //An air quality sensor of BleBox (HAS-425): the two columns as its binding, told by the id of the device
+    @Test
+    void should_map_a_blebox_air_quality_sensor_with_its_binding() {
+        final DeviceEntity entity = row().id(145L).name("Air sensor").room(RoomName.GARDEN)
+            .kind(DeviceKind.AIR_QUALITY_SENSOR).vendor(SmartVendor.BLEBOX).enabled(true)
+            .bleboxAddress("192.0.2.23").bleboxDeviceId("0123456789ab")
+            .build();
+
+        assertThat(mapper.toDevice(entity)).isEqualTo(SmartDevice.builder()
+            .id(145L)
+            .name("Air sensor")
+            .room(RoomName.GARDEN)
+            .kind(DeviceKind.AIR_QUALITY_SENSOR)
+            .vendor(SmartVendor.BLEBOX)
+            .enabled(true)
+            .blebox(BleboxBinding.builder().address("192.0.2.23").deviceId("0123456789ab").build())
             .build());
     }
 

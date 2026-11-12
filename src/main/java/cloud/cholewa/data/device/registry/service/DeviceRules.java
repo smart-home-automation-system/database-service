@@ -19,7 +19,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-//What the SDK model leaves open: its five bindings and the fields of one kind only are all
+//What the SDK model leaves open: its six bindings and the fields of one kind only are all
 //optional, and nothing in it ties them to the vendor and the kind of the device. The registry
 //does, here, before a device is stored - the schema (V13) repeats what one row can say of it, and
 //would answer with the name of a constraint where this answers in words.
@@ -40,9 +40,10 @@ final class DeviceRules {
         //an Eaton device is reached through a gateway of the AMX system and nothing else is; the
         //binding of a Shelly is a Shelly's. A Bluetooth sensor is of any vendor but Eaton; an
         //inverter is of none of the vendors the registry names (HAS-326). A Gree unit is reached by
-        //the protocol of Gree and nothing else is (HAS-377)
+        //the protocol of Gree and nothing else is (HAS-377), a BleBox sensor by its own API over HTTP (HAS-424)
         if ((vendor == SmartVendor.EATON) != (binding == Binding.EATON)
             || (vendor == SmartVendor.GREE) != (binding == Binding.GREE)
+            || (vendor == SmartVendor.BLEBOX) != (binding == Binding.BLEBOX)
             || (binding == Binding.SHELLY && vendor != SmartVendor.SHELLY)
             || (binding == Binding.INVERTER && vendor != SmartVendor.OTHER)) {
             throw new InvalidDeviceException(
@@ -211,9 +212,13 @@ final class DeviceRules {
         if (device.getGree() != null) {
             given.add(Binding.GREE);
         }
+        if (device.getBlebox() != null) {
+            given.add(Binding.BLEBOX);
+        }
         if (given.size() != 1) {
             throw new InvalidDeviceException(
-                "A device is reached through exactly one binding - shelly, eaton, bthome, inverter or gree - and this one has "
+                "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox"
+                    + " - and this one has "
                     + (given.isEmpty() ? "none" : given.stream().map(Binding::toString).collect(Collectors.joining(" and "))));
         }
         return given.getFirst();
@@ -242,12 +247,15 @@ final class DeviceRules {
             //an air conditioner is an indoor unit driven by aircon-service over the protocol of its
             //maker - a Gree unit by its address and MAC (HAS-377)
             case AIR_CONDITIONER -> EnumSet.of(Binding.GREE);
+            //an air quality sensor is polled by weather-service over the API of its maker - a BleBox
+            //sensor by its address and the id of its GET /info (HAS-424)
+            case AIR_QUALITY_SENSOR -> EnumSet.of(Binding.BLEBOX);
         };
     }
 
     //named as the fields of the model are
     private enum Binding {
-        SHELLY, EATON, BTHOME, INVERTER, GREE;
+        SHELLY, EATON, BTHOME, INVERTER, GREE, BLEBOX;
 
         @Override
         public String toString() {

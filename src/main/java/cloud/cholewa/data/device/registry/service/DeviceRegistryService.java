@@ -45,6 +45,8 @@ public class DeviceRegistryService {
     private static final String INVERTER_SERIAL_NUMBER_UNIQUE_CONSTRAINT = "devices_inverter_serial_number_uq";
     private static final String GREE_MAC_UNIQUE_CONSTRAINT = "devices_gree_mac_uq";
     private static final String GREE_ADDRESS_UNIQUE_CONSTRAINT = "devices_gree_address_uq";
+    private static final String BLEBOX_ADDRESS_UNIQUE_CONSTRAINT = "devices_blebox_address_uq";
+    private static final String BLEBOX_DEVICE_ID_UNIQUE_CONSTRAINT = "devices_blebox_device_id_uq";
 
     private final SmartDeviceMapper mapper;
     private final DeviceEntityMapper entityMapper;
@@ -209,6 +211,14 @@ public class DeviceRegistryService {
         if (message.contains(GREE_ADDRESS_UNIQUE_CONSTRAINT)) {
             return new DeviceConflictException(
                 "A device is already registered for the Gree unit at [" + device.getGreeAddress() + "]");
+        }
+        if (message.contains(BLEBOX_DEVICE_ID_UNIQUE_CONSTRAINT)) {
+            return new DeviceConflictException(
+                "A device is already registered for the BleBox device with the id [" + device.getBleboxDeviceId() + "]");
+        }
+        if (message.contains(BLEBOX_ADDRESS_UNIQUE_CONSTRAINT)) {
+            return new DeviceConflictException(
+                "A device is already registered for the BleBox device at [" + device.getBleboxAddress() + "]");
         }
         return exception;
     }
