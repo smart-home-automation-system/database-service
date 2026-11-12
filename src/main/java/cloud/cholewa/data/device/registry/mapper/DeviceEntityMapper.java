@@ -2,6 +2,7 @@ package cloud.cholewa.data.device.registry.mapper;
 
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
 import cloud.cholewa.home.model.ApplianceSettings;
+import cloud.cholewa.home.model.BleboxBinding;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.GreeBinding;
@@ -55,6 +56,7 @@ public class DeviceEntityMapper {
         final ApplianceSettings appliance = device.getAppliance();
         final InverterBinding inverter = device.getInverter();
         final GreeBinding gree = device.getGree();
+        final BleboxBinding blebox = device.getBlebox();
 
         return DeviceEntity.builder()
             .name(device.getName())
@@ -88,7 +90,9 @@ public class DeviceEntityMapper {
             .inverterLoggerSerial(inverter == null ? null : inverter.getLoggerSerial())
             .inverterBatterySerialNumber(inverter == null ? null : inverter.getBatterySerialNumber())
             .greeAddress(gree == null ? null : gree.getAddress())
-            .greeMac(gree == null ? null : gree.getMac());
+            .greeMac(gree == null ? null : gree.getMac())
+            .bleboxAddress(blebox == null ? null : blebox.getAddress())
+            .bleboxDeviceId(blebox == null ? null : blebox.getDeviceId());
     }
 
     //the column is never null: a list the payload left out, or sent as null, is none

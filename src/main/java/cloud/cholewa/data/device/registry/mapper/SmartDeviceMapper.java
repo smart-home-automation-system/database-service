@@ -2,6 +2,7 @@ package cloud.cholewa.data.device.registry.mapper;
 
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
 import cloud.cholewa.home.model.ApplianceSettings;
+import cloud.cholewa.home.model.BleboxBinding;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.GreeBinding;
@@ -39,6 +40,18 @@ public class SmartDeviceMapper {
             .appliance(appliance(entity))
             .inverter(inverter(entity))
             .gree(gree(entity))
+            .blebox(blebox(entity))
+            .build();
+    }
+
+    //the BleBox binding is told by the id of the device, whole or absent (V24)
+    private static BleboxBinding blebox(final DeviceEntity entity) {
+        if (entity.getBleboxDeviceId() == null) {
+            return null;
+        }
+        return BleboxBinding.builder()
+            .address(entity.getBleboxAddress())
+            .deviceId(entity.getBleboxDeviceId())
             .build();
     }
 

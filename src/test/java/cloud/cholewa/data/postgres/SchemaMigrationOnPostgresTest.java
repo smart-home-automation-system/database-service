@@ -389,6 +389,46 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0));
     }
 
+    //V24 (HAS-425) over the registry as it is: a device of each of the five bindings keeps it and has no
+    //BleBox binding, and so does a row the released version inserts afterwards, not naming the columns -
+    //the check of one binding of six takes what the check of one of five took
+    @Test
+    void should_leave_every_device_without_a_blebox_binding_also_one_an_older_release_inserts() {
+        final String schema = "rehearsal_blebox";
+        startOver(schema);
+        migrate(schema, "23");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Cinema windows', 'CINEMA', 'BLINDS', 'EATON', true, 'BLINDS', 20)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation)
+            VALUES (now(), 'Kitchen lamp', 'KITCHEN', 'LIGHT', 'SHELLY', true, '192.0.2.65', 1)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, bthome_address)
+            VALUES (now(), 'Garden weather', 'GARDEN', 'WEATHER_STATION', 'OTHER', true, '7c:c6:b6:00:00:01')"""
+            .formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, inverter_brand, inverter_serial_number)
+            VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'OTHER', true, 'SOLAX', 'H1234567890ABC')"""
+            .formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, gree_address, gree_mac)
+            VALUES (now(), 'Air conditioner', 'OFFICE', 'AIR_CONDITIONER', 'GREE', true, '192.0.2.59', '02005e0000a1')"""
+            .formatted(schema));
+
+        migrate(schema, "latest");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Office windows', 'OFFICE', 'BLINDS', 'EATON', true, 'BLINDS', 21)""".formatted(schema));
+
+        assertThat(rows("""
+            SELECT num_nonnulls(shelly_address, eaton_gateway, bthome_address, inverter_serial_number, gree_mac) AS bindings,
+                num_nonnulls(blebox_address, blebox_device_id) AS blebox
+            FROM %s.devices ORDER BY id""".formatted(schema)))
+            .extracting(device -> device.get("bindings"), device -> device.get("blebox"))
+            .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0));
+    }
+
     //V23 (HAS-415) over the requests as they are: one done before it counts as announced, so its author is
     //not told after the deploy; an open one has no mark, and neither has a row the released version inserts
     //afterwards, not naming the columns

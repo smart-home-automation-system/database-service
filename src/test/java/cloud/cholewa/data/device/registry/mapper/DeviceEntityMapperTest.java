@@ -3,6 +3,7 @@ package cloud.cholewa.data.device.registry.mapper;
 import cloud.cholewa.data.device.registry.model.DeviceEntity;
 import cloud.cholewa.home.model.ApplianceSettings;
 import cloud.cholewa.home.model.BlindsPlacement;
+import cloud.cholewa.home.model.BleboxBinding;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
@@ -191,6 +192,7 @@ class DeviceEntityMapperTest {
             .appliance(APPLIANCE)
             .inverter(EVERY_INVERTER_FIELD)
             .gree(GreeBinding.builder().address("192.0.2.59").mac("02005e0000a1").build())
+            .blebox(BleboxBinding.builder().address("192.0.2.23").deviceId("0123456789ab").build())
             .build();
         final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED).build();
 
@@ -236,6 +238,8 @@ class DeviceEntityMapperTest {
             .inverterBatterySerialNumber("B1234567890ABC")
             .greeAddress("192.0.2.59")
             .greeMac("02005e0000a1")
+            .bleboxAddress("192.0.2.23")
+            .bleboxDeviceId("0123456789ab")
             .build();
 
         final DeviceEntity off = mapper.withEnabled(existing, false);
@@ -318,6 +322,27 @@ class DeviceEntityMapperTest {
                 .openingSensors(List.of())
                 .greeAddress("192.0.2.59")
                 .greeMac("02005e0000a1")
+                .build());
+    }
+
+    //An air quality sensor of BleBox (HAS-425): its binding becomes the two columns blebox_*
+    @Test
+    void should_make_a_new_row_of_a_blebox_air_quality_sensor_with_its_binding() {
+        final SmartDevice sensor = SmartDevice.builder().name("Air sensor").room(RoomName.GARDEN)
+            .kind(DeviceKind.AIR_QUALITY_SENSOR).vendor(SmartVendor.BLEBOX).enabled(true)
+            .blebox(BleboxBinding.builder().address("192.0.2.23").deviceId("0123456789ab").build())
+            .build();
+
+        assertThat(mapper.toNewEntity(sensor)).usingRecursiveComparison().ignoringFields("createdAt")
+            .isEqualTo(DeviceEntity.builder()
+                .name("Air sensor")
+                .room(RoomName.GARDEN)
+                .kind(DeviceKind.AIR_QUALITY_SENSOR)
+                .vendor(SmartVendor.BLEBOX)
+                .enabled(true)
+                .openingSensors(List.of())
+                .bleboxAddress("192.0.2.23")
+                .bleboxDeviceId("0123456789ab")
                 .build());
     }
 
