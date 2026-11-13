@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.util.List;
@@ -144,7 +145,7 @@ class PushSubscriptionsOnPostgresTest extends OnPostgres {
             .exchange()
             .expectStatus().isOk()
             .expectBody()
-            .json("{}", org.springframework.test.json.JsonCompareMode.STRICT);
+            .json("{}", JsonCompareMode.STRICT);
     }
 
     //the schema keeps what the model keeps, for a row written past the API

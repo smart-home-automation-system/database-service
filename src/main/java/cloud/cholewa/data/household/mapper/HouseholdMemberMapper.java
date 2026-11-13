@@ -8,9 +8,11 @@ import cloud.cholewa.home.model.RoomName;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", imports = {LocalDateTime.class, ZoneId.class})
 public interface HouseholdMemberMapper {
 
     @Mapping(target = "devices", ignore = true)
@@ -27,7 +29,7 @@ public interface HouseholdMemberMapper {
     //payload
     @Mapping(target = "active", constant = "true")
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "createdAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
+    @Mapping(target = "createdAt", expression = "java(LocalDateTime.now(ZoneId.systemDefault()))")
     @Mapping(target = "updatedAt", ignore = true)
     @Mapping(target = "name", source = "householdMember.name")
     @Mapping(target = "phone", source = "householdMember.phone")
@@ -56,7 +58,7 @@ public interface HouseholdMemberMapper {
         target = "role",
         expression = "java(householdMember.getRole() != null ? householdMember.getRole() : existing.getRole())"
     )
-    @Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
+    @Mapping(target = "updatedAt", expression = "java(LocalDateTime.now(ZoneId.systemDefault()))")
     HouseholdMemberEntity toUpdatedEntity(HouseholdMemberEntity existing, HouseholdMember householdMember);
 
     @Mapping(target = "id", source = "existing.id")
@@ -67,7 +69,7 @@ public interface HouseholdMemberMapper {
     @Mapping(target = "rooms", source = "existing.rooms")
     @Mapping(target = "permissions", source = "existing.permissions")
     @Mapping(target = "active", source = "active")
-    @Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
+    @Mapping(target = "updatedAt", expression = "java(LocalDateTime.now(ZoneId.systemDefault()))")
     HouseholdMemberEntity withActive(HouseholdMemberEntity existing, boolean active);
 
     @Mapping(target = "id", source = "existing.id")
@@ -78,7 +80,7 @@ public interface HouseholdMemberMapper {
     @Mapping(target = "role", source = "existing.role")
     @Mapping(target = "rooms", source = "rooms")
     @Mapping(target = "permissions", source = "existing.permissions")
-    @Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
+    @Mapping(target = "updatedAt", expression = "java(LocalDateTime.now(ZoneId.systemDefault()))")
     HouseholdMemberEntity withRooms(HouseholdMemberEntity existing, List<RoomName> rooms);
 
     @Mapping(target = "id", source = "existing.id")
@@ -89,6 +91,6 @@ public interface HouseholdMemberMapper {
     @Mapping(target = "role", source = "existing.role")
     @Mapping(target = "rooms", source = "existing.rooms")
     @Mapping(target = "permissions", source = "permissions")
-    @Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
+    @Mapping(target = "updatedAt", expression = "java(LocalDateTime.now(ZoneId.systemDefault()))")
     HouseholdMemberEntity withPermissions(HouseholdMemberEntity existing, List<MemberPermission> permissions);
 }

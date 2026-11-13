@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Arrays;
 import java.util.List;
@@ -504,8 +506,8 @@ class DeviceRulesTest {
     }
 
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.NullSource
-    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 3})
+    @NullSource
+    @ValueSource(ints = {1, 3})
     void should_refuse_a_water_valve_on_another_channel(final Integer channel) {
         final SmartDevice valve = device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
             .shelly(valve(3, "neowatervalve-000000000000", channel)).build();
