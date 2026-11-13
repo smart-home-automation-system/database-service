@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -232,7 +234,7 @@ class MemberRequestsOnPostgresTest extends OnPostgres {
         execute("UPDATE member_requests SET sent_at = now() - interval '4 days' WHERE id IN (" + old + ", " + oldDone + ")");
         done("Anna", oldDone, "Anna").expectStatus().isOk();
 
-        final String sentBefore = "/household/requests/stale?sentBefore=" + java.time.LocalDateTime.now().minusDays(3)
+        final String sentBefore = "/household/requests/stale?sentBefore=" + LocalDateTime.now(ZoneId.systemDefault()).minusDays(3)
             .withNano(0);
         assertThat(read(sentBefore)).extracting(request -> request.get("text"), request -> request.get("author"))
             .containsExactly(tuple("Kup chleb", "Jan"));

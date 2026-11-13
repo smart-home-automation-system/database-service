@@ -19,7 +19,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -193,7 +195,7 @@ class PushSubscriptionControllerTest {
     @Test
     void should_not_reach_the_removal_of_notification_service_through_a_dot_segment_below_a_routed_prefix() {
         webTestClient.delete()
-            .uri(java.net.URI.create("/household/../push-subscriptions?endpoint=" + ENDPOINT))
+            .uri(URI.create("/household/../push-subscriptions?endpoint=" + ENDPOINT))
             .exchange()
             .expectStatus().isNotFound();
 
@@ -231,7 +233,7 @@ class PushSubscriptionControllerTest {
     @Test
     void should_not_reach_the_read_of_notification_service_through_a_dot_segment_below_a_routed_prefix() {
         webTestClient.get()
-            .uri(java.net.URI.create("/household/../push-subscriptions?members=Ola"))
+            .uri(URI.create("/household/../push-subscriptions?members=Ola"))
             .exchange()
             .expectStatus().isNotFound();
 
@@ -240,7 +242,7 @@ class PushSubscriptionControllerTest {
 
     @Test
     void should_refuse_a_read_of_more_members_than_a_household_has() {
-        final String many = String.join(",", java.util.Collections.nCopies(21, "Ola"));
+        final String many = String.join(",", Collections.nCopies(21, "Ola"));
 
         webTestClient.get()
             .uri("/push-subscriptions?members=" + many)

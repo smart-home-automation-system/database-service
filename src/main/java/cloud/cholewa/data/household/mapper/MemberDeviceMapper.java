@@ -5,13 +5,16 @@ import cloud.cholewa.home.model.MemberPhoneDetails;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
-@Mapper(componentModel = "spring")
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
+@Mapper(componentModel = "spring", imports = {LocalDateTime.class, ZoneId.class})
 public interface MemberDeviceMapper {
 
     MemberPhoneDetails toMemberPhoneDetails(MemberDeviceEntity entity);
 
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "createdAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
+    @Mapping(target = "createdAt", expression = "java(LocalDateTime.now(ZoneId.systemDefault()))")
     @Mapping(target = "updatedAt", ignore = true)
     @Mapping(target = "memberId", source = "memberId")
     @Mapping(target = "name", source = "device.name")
@@ -24,6 +27,6 @@ public interface MemberDeviceMapper {
     @Mapping(target = "memberId", source = "existing.memberId")
     @Mapping(target = "name", source = "device.name")
     @Mapping(target = "mac", source = "device.mac")
-    @Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now(java.time.ZoneId.systemDefault()))")
+    @Mapping(target = "updatedAt", expression = "java(LocalDateTime.now(ZoneId.systemDefault()))")
     MemberDeviceEntity toUpdatedEntity(MemberDeviceEntity existing, MemberPhoneDetails device);
 }

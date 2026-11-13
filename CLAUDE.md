@@ -698,7 +698,7 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- SDK **1.20.0** since HAS-425 (`DeviceKind.AIR_QUALITY_SENSOR`, `BleboxBinding`, `SmartVendor.BLEBOX` - `V24`; the
+- SDK **1.21.0** since HAS-436 (a no-op bump - the smog events of the household are not read here); 1.20.0 since HAS-425 (`DeviceKind.AIR_QUALITY_SENSOR`, `BleboxBinding`, `SmartVendor.BLEBOX` - `V24`; the
   release before 0.25.0 cannot read a stored sensor); 1.19.0 since HAS-415 (`MemberRequest` marks of the reminders - `V23`, additive); 1.18.0 since HAS-378 (`DeviceKind.AIR_CONDITIONER`, `GreeBinding`, `SmartVendor.GREE` - `V22`; the
   release before 0.23.0 cannot read a stored unit); 1.17.0 since HAS-409 (`MemberRequest`, additive); 1.16.0 since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` -
   no migration, the kind column is text; the release before 0.21.0 cannot read a stored valve).
@@ -708,6 +708,11 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   `<dependencyManagement>` is gone since logbook 4.2.0 (with Boot 4.1.1, HAS-145), which
   declares the version JUnit 6 does; should the two disagree again, pin it — do not exclude it.
 - logbook needs the optional `spring-boot-http-client` module on Boot 4.1 (already declared).
+- **Imports, never a fully qualified class name in code** (owner, 2026-11-12; HAS-436 removed the last ones): a class
+  of another package is imported, also in tests - no `java.net.URI.create(...)` or `@org.junit.jupiter.params.provider.NullSource`
+  inline; a MapStruct `expression` names its classes through `@Mapper(imports = ...)` (`HouseholdMemberMapper`,
+  `MemberDeviceMapper`). Before a change is done, search the diff for a package path followed by a class name outside the
+  `import` and `package` lines.
 - **`cholewa-commons` 1.14.0** (HAS-214: `DomainExceptionProcessor`; 1.13.0 since HAS-311, 1.12.0 since HAS-276, 1.11.0 since HAS-272, from 1.9.0; 1.12.0 and 1.13.0 add publishers not used here): Logbook runs as a WebFilter in the reactive
   chain, so its lines carry the `traceId` (1.10.0), and the actuator is left out of its log
   (1.10.1). This service has no `WebClient`, no own `LogbookClientHandler` and no `@Scheduled`
