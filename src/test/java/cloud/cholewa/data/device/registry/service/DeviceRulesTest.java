@@ -9,6 +9,7 @@ import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
 import cloud.cholewa.home.model.GreeBinding;
+import cloud.cholewa.home.model.HikvisionBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.LightKind;
@@ -44,6 +45,8 @@ class DeviceRulesTest {
     private static final GreeBinding GREE = GreeBinding.builder().address("192.0.2.59").mac("02005e0000a1").build();
     private static final BleboxBinding BLEBOX = BleboxBinding.builder().address("192.0.2.23").deviceId("0123456789ab")
         .build();
+    private static final HikvisionBinding HIKVISION = HikvisionBinding.builder().address("192.0.2.93")
+        .serialNumber("DS-KV0000-WE1(B)0120200101RRA00000001").build();
 
     //every pair of a kind and a binding the house may have, with the vendor the binding is of
     @ParameterizedTest
@@ -68,7 +71,8 @@ class DeviceRulesTest {
         "PUSH_BUTTON, SHELLY, shelly",
         "MOTION_SENSOR, EATON, eaton",
         "AIR_CONDITIONER, GREE, gree",
-        "AIR_QUALITY_SENSOR, BLEBOX, blebox"
+        "AIR_QUALITY_SENSOR, BLEBOX, blebox",
+        "INTERCOM, HIKVISION, hikvision"
     })
     void should_take_a_device_whose_binding_fits_its_vendor_and_its_kind(
         final DeviceKind kind, final SmartVendor vendor, final String binding
@@ -131,7 +135,7 @@ class DeviceRulesTest {
 
     @ParameterizedTest
     @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY", "APPLIANCE", "INVERTER",
-        "WATER_VALVE", "AIR_CONDITIONER", "AIR_QUALITY_SENSOR"}, mode = EnumSource.Mode.EXCLUDE)
+        "WATER_VALVE", "AIR_CONDITIONER", "AIR_QUALITY_SENSOR", "INTERCOM", "GATE"}, mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_way_a_light_is_driven_on_anything_but_a_light(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.EATON, "eaton").lightKind(LightKind.DIMMER).build();
 
@@ -273,12 +277,14 @@ class DeviceRulesTest {
             case INVERTER -> "inverter";
             case AIR_CONDITIONER -> "gree";
             case AIR_QUALITY_SENSOR -> "blebox";
+            case INTERCOM -> "hikvision";
             default -> "shelly";
         };
         final SmartVendor vendor = switch (kind) {
             case INVERTER -> SmartVendor.OTHER;
             case AIR_CONDITIONER -> SmartVendor.GREE;
             case AIR_QUALITY_SENSOR -> SmartVendor.BLEBOX;
+            case INTERCOM -> SmartVendor.HIKVISION;
             default -> SmartVendor.SHELLY;
         };
         final SmartDevice device = device(kind, vendor, binding).openingSensors(List.of(31L)).build();
@@ -340,7 +346,7 @@ class DeviceRulesTest {
 
     @ParameterizedTest
     @EnumSource(value = DeviceKind.class, names = {"APPLIANCE", "WEATHER_STATION", "INVERTER", "AIR_CONDITIONER",
-        "AIR_QUALITY_SENSOR"},
+        "AIR_QUALITY_SENSOR", "INTERCOM"},
         mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_settings_of_an_appliance_on_another_kind(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.SHELLY, "shelly").appliance(APPLIANCE).build();
@@ -431,7 +437,7 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(inverter))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this"
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this"
                 + " one has bthome and inverter");
     }
 
@@ -579,7 +585,7 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(unit))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this"
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this"
                 + " one has shelly and gree");
     }
 
@@ -629,8 +635,103 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(sensor))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this"
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this"
                 + " one has none");
+    }
+
+    //The door station of Hikvision (HAS-445) is reached by its own binding, and only a Hikvision station is
+    @Test
+    void should_take_a_hikvision_intercom_with_its_address_and_serial_number() {
+        assertThatCode(() -> DeviceRules.check(device(DeviceKind.INTERCOM, SmartVendor.HIKVISION, "hikvision").build()))
+            .doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SmartVendor.class, names = "HIKVISION", mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_the_hikvision_binding_of_another_vendor(final SmartVendor vendor) {
+        final SmartDevice station = device(DeviceKind.INTERCOM, vendor, "hikvision").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(station))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the vendor [" + vendor.getValue() + "] is not reached through the binding [hikvision]");
+    }
+
+    //the vendor Hikvision is reached by its own protocol and nothing else
+    @ParameterizedTest
+    @CsvSource({"shelly", "bthome", "inverter", "gree", "blebox"})
+    void should_refuse_a_hikvision_device_reached_through_another_binding(final String binding) {
+        final SmartDevice station = device(DeviceKind.INTERCOM, SmartVendor.HIKVISION, binding).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(station))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the vendor [hikvision] is not reached through the binding [" + binding + "]");
+    }
+
+    //an intercom is its binding: no other kind is reached by it - a vendor hikvision of another kind included
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = "INTERCOM", mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_the_hikvision_binding_on_another_kind(final DeviceKind kind) {
+        final SmartDevice device = device(kind, SmartVendor.HIKVISION, "hikvision").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessageStartingWith("A device of the kind [" + kind.getValue() + "] is not reached through the binding [hikvision]");
+    }
+
+    //the gate is the Shelly that pulses the drive of the gate (HAS-445): a Shelly, and nothing else
+    @ParameterizedTest
+    @CsvSource({"EATON, eaton", "OTHER, bthome", "HIKVISION, hikvision"})
+    void should_refuse_a_gate_reached_through_anything_but_a_shelly(final SmartVendor vendor, final String binding) {
+        final SmartDevice gate = device(DeviceKind.GATE, vendor, binding).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(gate))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the kind [gate] is not reached through the binding [" + binding + "], only through: shelly");
+    }
+
+    //the gate is the Shelly 1 of the gate, its one relay on the channel 0 (HAS-445)
+    @Test
+    void should_take_a_gate_on_the_channel_0() {
+        final SmartDevice gate = device(DeviceKind.GATE, SmartVendor.SHELLY, "shelly")
+            .shelly(ShellyBinding.builder().address("192.0.2.94").generation(1).channel(0).build())
+            .build();
+
+        assertThatCode(() -> DeviceRules.check(gate)).doesNotThrowAnyException();
+    }
+
+    //the gate pulses its one relay on the channel 0 (HAS-445): without a channel, or on another, it has none
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(ints = {1, 3})
+    void should_refuse_a_gate_not_on_the_channel_0(final Integer channel) {
+        final SmartDevice gate = device(DeviceKind.GATE, SmartVendor.SHELLY, "shelly")
+            .shelly(ShellyBinding.builder().address("192.0.2.94").generation(1).channel(channel).build())
+            .build();
+
+        assertThatThrownBy(() -> DeviceRules.check(gate))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the kind [gate] is reached on the channel 0, not " + channel);
+    }
+
+    //a gate is no light, blinds or appliance: what describes another kind is refused on it
+    @Test
+    void should_refuse_the_fields_of_another_kind_on_a_gate() {
+        final SmartDevice gate = device(DeviceKind.GATE, SmartVendor.SHELLY, "shelly").lightKind(LightKind.RELAY).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(gate))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("lightKind describes a light, not a device of the kind [gate]");
+    }
+
+    //a station without its binding is told what it has instead
+    @Test
+    void should_refuse_an_intercom_without_its_binding() {
+        final SmartDevice station = device(DeviceKind.INTERCOM, SmartVendor.HIKVISION, "none").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(station))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision"
+                + " - and this one has none");
     }
 
     private static ApplianceSettings.ApplianceSettingsBuilder<?, ?> appliance() {
@@ -653,6 +754,7 @@ class DeviceRulesTest {
             .bthome("bthome".equals(binding) ? BTHOME : null)
             .inverter("inverter".equals(binding) ? INVERTER : null)
             .gree("gree".equals(binding) ? GREE : null)
-            .blebox("blebox".equals(binding) ? BLEBOX : null);
+            .blebox("blebox".equals(binding) ? BLEBOX : null)
+            .hikvision("hikvision".equals(binding) ? HIKVISION : null);
     }
 }

@@ -118,7 +118,7 @@ point.
 What a reader can rely on:
 
 - **A device has exactly one binding** - `shelly`, `eaton`, `bthome`, (since 0.20.0) `inverter`, (since
-  0.23.0) `gree` or (since 0.25.0) `blebox` -
+  0.23.0) `gree`, (since 0.25.0) `blebox` or (since 0.26.0) `hikvision` -
   and the others are not in the JSON at all (not `null`, not `{}`). The schema guarantees the one.
 - **The fields of one kind only** (`lightKind`, `placement`, `positioning`) are left out when
   the row has none; a missing `positioning` is "not known", never `false`.
@@ -194,6 +194,21 @@ What a reader can rely on:
   **The release before 0.25.0 cannot read an air quality sensor** (nor its vendor): once one is stored, a
   rollback answers `500` for every read of the whole registry (a read by another kind still works) -
   register the sensor only after 0.25.0 runs, and never roll back below it.
+- **An `intercom` and a `gate`** (since 0.26.0, SDK 1.22.0, HAS-445, epic HAS-442) are read by `gate-service`:
+  the intercom is the door station at the gate, of the vendor `hikvision`, reached by its `hikvision` binding
+  alone - the IPv4 address of the station and the serial number its `System/deviceInfo` gives (the model, the
+  date of manufacture and the serial in one word); the gate is the Shelly that gives the drive of the gate its
+  pulse, an ordinary `shelly` device on the channel 0 - its one relay, which `gate-service` switches on and its
+  `auto_off` switches off.
+
+  ```json
+  {"id": 901, "name": "Intercom", "room": "garden", "kind": "intercom", "enabled": true,
+   "vendor": "hikvision", "hikvision": {"address": "192.0.2.93", "serialNumber": "DS-KV0000-WE1(B)0120200101RRA00000001"}}
+  ```
+
+  **The release before 0.26.0 cannot read either kind** (nor the vendor): once one is stored, a rollback answers
+  `500` for every read of the whole registry (a read by another kind still works) - register them only after
+  0.26.0 runs, and never roll back below it.
 - **A device of the Eaton configuration has a name the registry gave it** - its room, its
   kind and its point (`Living room temperature sensor 45`) - because a configuration has none.
 - A device is addressed by `id` here, unlike a member of the household (by name): it has no
@@ -219,6 +234,8 @@ What a writer has to know:
     | `water valve` (since 0.21.0) | `shelly` - of generation 2 or later, on the channel 0 |
     | `air conditioner` (since 0.23.0) | `gree` - and the `gree` binding is of this kind alone |
     | `air quality sensor` (since 0.25.0) | `blebox` - and the `blebox` binding is of this kind alone |
+    | `intercom` (since 0.26.0) | `hikvision` - and the `hikvision` binding is of this kind alone |
+    | `gate` (since 0.26.0) | `shelly` - the Shelly 1 that pulses the drive of the gate, on the channel 0 (its one relay) |
 
   - a Shelly channel is an output, 0 to 3, of any kind - or a zone, 200 to 299 (`presencezone:200`),
     of a `presence sensor` alone (since 0.17.0, HAS-260);
@@ -237,10 +254,11 @@ What a writer has to know:
     `registrationNumber` only for the brand `solax`, `loggerSerial` only for `sofar`. Neither is
     required, nor is `address`;
   - the vendor `gree` (since 0.23.0, SDK 1.18.0, HAS-378) with the `gree` binding and the other way round;
-  - the vendor `blebox` (since 0.25.0, SDK 1.20.0, HAS-425) with the `blebox` binding and the other way round.
+  - the vendor `blebox` (since 0.25.0, SDK 1.20.0, HAS-425) with the `blebox` binding and the other way round;
+  - the vendor `hikvision` (since 0.26.0, SDK 1.22.0, HAS-445) with the `hikvision` binding and the other way round.
 - **A binding is one device** - `409` with the code `DEVICE_CONFLICT`, and `details` names
   what is taken: a channel of a Shelly by its address, a channel of a Shelly by its MQTT id,
-  a point of an Eaton gateway, a Bluetooth address, the serial number of an inverter, the MAC or the address of a Gree unit, the id or the address of a BleBox device. A Shelly without a channel is one device
+  a point of an Eaton gateway, a Bluetooth address, the serial number of an inverter, the MAC or the address of a Gree unit, the id or the address of a BleBox device, the serial number or the address of a Hikvision station. A Shelly without a channel is one device
   as a whole, next to which its channels may still be registered.
 - **`PUT` is the whole device, not a patch.** Send everything the device should be; a client
   that edits a device reads it, changes it and sends it back. There is no partial update: the
@@ -407,7 +425,7 @@ a stable name of the cause, for a caller that has to tell errors apart without p
 | `NOT_FOUND_MEMBER_DEVICE` | 404 | the member has no device with that MAC |
 | `DEVICE_EXIST` | 409 | the MAC is registered already, or the member has a device of that name |
 | `NOT_FOUND_DEVICE` | 404 | no device of the registry under that id |
-| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts`, an `inverter` binding of a named vendor or with a number of the other brand, a `water valve` on a Shelly of the first generation or on a channel other than 0, a `gree` binding of another vendor or the vendor `gree` with another binding, a `blebox` binding of another vendor or kind, or the vendor `blebox` with another binding |
+| `INVALID_DEVICE` | 400 | a device the model accepts and the registry does not: no binding or two, a binding that is not of the vendor or of the kind, a Shelly of generation 2 or later without its `deviceId`, a field of another kind, a change of the kind, `openingSensors` that are no registered opening sensors (or repeat one, or hold `null`), a Shelly channel of 4 to 199 or a zone (200 to 299) on any kind but `presence sensor`, an `appliance` without its settings or settings on another kind, an `idleBelowWatts` not below `runningAboveWatts`, an `inverter` binding of a named vendor or with a number of the other brand, a `water valve` on a Shelly of the first generation or on a channel other than 0, a `gree` binding of another vendor or the vendor `gree` with another binding, a `blebox` binding of another vendor or kind, or the vendor `blebox` with another binding, a `hikvision` binding of another vendor or kind, or the vendor `hikvision` with another binding, a `gate` without the channel 0 |
 | `DEVICE_CONFLICT` | 409 | the binding of the device is taken by another device of the registry; or the device is an opening sensor that blinds still name, and cannot be removed |
 | `NOT_FOUND_DAY_OFF` | 404 | the household added no day off on that date - a holiday and a weekend are days off without being stored |
 
@@ -486,6 +504,13 @@ does not know: the value fails while the body is read, and the answer is a `400`
   `AIR_QUALITY_SENSOR` (`devices_blebox_of_air_quality_sensors`) and exactly when the vendor is `BLEBOX`
   (`devices_blebox_vendor`), within the bounds of the SDK (`devices_blebox_format`); a sensor by its id once
   (`devices_blebox_device_id_uq`) and by its address once (`devices_blebox_address_uq`).
+- **Intercoms** (`V25`, HAS-445): the Hikvision binding as two nullable columns of `devices`,
+  `hikvision_address` and `hikvision_serial_number`, told by the serial number - `devices_one_binding` counts seven
+  bindings since. The binding is whole or absent (`devices_hikvision_binding_whole`), there exactly when the kind is
+  `INTERCOM` (`devices_hikvision_of_intercoms`) and exactly when the vendor is `HIKVISION` (`devices_hikvision_vendor`),
+  within the bounds of the SDK (`devices_hikvision_format`); a station by its serial number once
+  (`devices_hikvision_serial_number_uq`) and by its address once (`devices_hikvision_address_uq`). The kind `GATE` is a
+  Shelly row and has no column of its own.
 - **Household registry** (`V8`–`V10`): `household_members` (`name` unique ignoring letter case
   since `V10`, `phone` unique, phone
   checked to be E.164 since `V9` — `V8` stored `xxx-xxx-xxx` and `V9` converted the existing

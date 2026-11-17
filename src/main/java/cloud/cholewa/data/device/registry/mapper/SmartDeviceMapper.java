@@ -6,6 +6,7 @@ import cloud.cholewa.home.model.BleboxBinding;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.GreeBinding;
+import cloud.cholewa.home.model.HikvisionBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
@@ -41,6 +42,18 @@ public class SmartDeviceMapper {
             .inverter(inverter(entity))
             .gree(gree(entity))
             .blebox(blebox(entity))
+            .hikvision(hikvision(entity))
+            .build();
+    }
+
+    //the Hikvision binding is told by the serial number of the station, whole or absent (V25)
+    private static HikvisionBinding hikvision(final DeviceEntity entity) {
+        if (entity.getHikvisionSerialNumber() == null) {
+            return null;
+        }
+        return HikvisionBinding.builder()
+            .address(entity.getHikvisionAddress())
+            .serialNumber(entity.getHikvisionSerialNumber())
             .build();
     }
 

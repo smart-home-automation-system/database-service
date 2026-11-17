@@ -6,6 +6,7 @@ import cloud.cholewa.home.model.BleboxBinding;
 import cloud.cholewa.home.model.BthomeBinding;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.GreeBinding;
+import cloud.cholewa.home.model.HikvisionBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
@@ -57,6 +58,7 @@ public class DeviceEntityMapper {
         final InverterBinding inverter = device.getInverter();
         final GreeBinding gree = device.getGree();
         final BleboxBinding blebox = device.getBlebox();
+        final HikvisionBinding hikvision = device.getHikvision();
 
         return DeviceEntity.builder()
             .name(device.getName())
@@ -92,7 +94,9 @@ public class DeviceEntityMapper {
             .greeAddress(gree == null ? null : gree.getAddress())
             .greeMac(gree == null ? null : gree.getMac())
             .bleboxAddress(blebox == null ? null : blebox.getAddress())
-            .bleboxDeviceId(blebox == null ? null : blebox.getDeviceId());
+            .bleboxDeviceId(blebox == null ? null : blebox.getDeviceId())
+            .hikvisionAddress(hikvision == null ? null : hikvision.getAddress())
+            .hikvisionSerialNumber(hikvision == null ? null : hikvision.getSerialNumber());
     }
 
     //the column is never null: a list the payload left out, or sent as null, is none
