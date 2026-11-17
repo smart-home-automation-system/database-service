@@ -9,6 +9,7 @@ import cloud.cholewa.home.model.DeviceKind;
 import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
 import cloud.cholewa.home.model.GreeBinding;
+import cloud.cholewa.home.model.HikvisionBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.InverterBrand;
 import cloud.cholewa.home.model.LightKind;
@@ -193,6 +194,8 @@ class DeviceEntityMapperTest {
             .inverter(EVERY_INVERTER_FIELD)
             .gree(GreeBinding.builder().address("192.0.2.59").mac("02005e0000a1").build())
             .blebox(BleboxBinding.builder().address("192.0.2.23").deviceId("0123456789ab").build())
+            .hikvision(HikvisionBinding.builder().address("192.0.2.93").serialNumber("DS-KV0000-WE1(B)0120200101RRA00000001")
+                .build())
             .build();
         final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED).build();
 
@@ -240,6 +243,8 @@ class DeviceEntityMapperTest {
             .greeMac("02005e0000a1")
             .bleboxAddress("192.0.2.23")
             .bleboxDeviceId("0123456789ab")
+            .hikvisionAddress("192.0.2.93")
+            .hikvisionSerialNumber("DS-KV0000-WE1(B)0120200101RRA00000001")
             .build();
 
         final DeviceEntity off = mapper.withEnabled(existing, false);
@@ -343,6 +348,28 @@ class DeviceEntityMapperTest {
                 .openingSensors(List.of())
                 .bleboxAddress("192.0.2.23")
                 .bleboxDeviceId("0123456789ab")
+                .build());
+    }
+
+    //The door station of Hikvision (HAS-445): its binding becomes the two columns hikvision_*
+    @Test
+    void should_make_a_new_row_of_a_hikvision_intercom_with_its_binding() {
+        final SmartDevice station = SmartDevice.builder().name("Intercom").room(RoomName.GARDEN)
+            .kind(DeviceKind.INTERCOM).vendor(SmartVendor.HIKVISION).enabled(true)
+            .hikvision(HikvisionBinding.builder().address("192.0.2.93").serialNumber("DS-KV0000-WE1(B)0120200101RRA00000001")
+                .build())
+            .build();
+
+        assertThat(mapper.toNewEntity(station)).usingRecursiveComparison().ignoringFields("createdAt")
+            .isEqualTo(DeviceEntity.builder()
+                .name("Intercom")
+                .room(RoomName.GARDEN)
+                .kind(DeviceKind.INTERCOM)
+                .vendor(SmartVendor.HIKVISION)
+                .enabled(true)
+                .openingSensors(List.of())
+                .hikvisionAddress("192.0.2.93")
+                .hikvisionSerialNumber("DS-KV0000-WE1(B)0120200101RRA00000001")
                 .build());
     }
 

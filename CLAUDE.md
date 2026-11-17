@@ -299,10 +299,10 @@ writes of both registries and of the calendar are open to whoever reaches the in
 `device.registry` (HAS-222, `V13`, table `devices`): the devices of the house as `SmartDevice` of
 `smart-home-sdk` >= 1.8.0 - the reads (HAS-222) and the writes (HAS-223, below).
 
-- **A row is flat, the model is nested.** The six bindings (`shelly`, `eaton`, `bthome`,
-  `inverter` since `V20`, `gree` since `V22` and `blebox` since `V24`) are columns of the one row; exactly one of
-  them is filled. Each is told by the column it cannot do without - `shelly_address`, `eaton_gateway`, `bthome_address`,
-  `inverter_serial_number`, `gree_mac`, `blebox_device_id` - in the check of the schema (`devices_one_binding`) and in the mapper
+- **A row is flat, the model is nested.** The seven bindings (`shelly`, `eaton`, `bthome`,
+  `inverter` since `V20`, `gree` since `V22`, `blebox` since `V24` and `hikvision` since `V25`) are columns of the one row;
+  exactly one of them is filled. Each is told by the column it cannot do without - `shelly_address`, `eaton_gateway`,
+  `bthome_address`, `inverter_serial_number`, `gree_mac`, `blebox_device_id`, `hikvision_serial_number` - in the check of the schema (`devices_one_binding`) and in the mapper
   alike. Change one, change the other.
 - **`SmartDeviceMapper` is written by hand, on purpose** - the one mapper here that is not
   MapStruct. MapStruct fills a nested target whenever its source object is there, so every
@@ -417,7 +417,8 @@ writes of both registries and of the calendar are open to whoever reaches the in
     this kind alone - the four sensors name their three bindings, not `allOf`); `water valve`: shelly
     (HAS-311 - of generation 2 or later, on the channel 0, `checkWaterValve`); `air conditioner`: gree
     (HAS-378 - and the vendor `gree` with that binding and the other way round, as `eaton`); `air quality sensor`:
-    blebox (HAS-425 - the same both ways with the vendor `blebox`). The switch names every kind, so a kind added to the SDK
+    blebox (HAS-425 - the same both ways with the vendor `blebox`); `intercom`: hikvision (HAS-445 - the same both ways
+    with the vendor `hikvision`); `gate`: shelly on the channel 0 (HAS-445 - its one relay, `checkGate`). The switch names every kind, so a kind added to the SDK
     stops the compiler there. The matrix is the service's own reading of "the binding fits
     the vendor and the kind" - the README states it; change both.
   - **A Shelly of generation 2 or later needs its `deviceId`** (owner, 2026-10-12; the SDK
@@ -534,6 +535,21 @@ writes of both registries and of the calendar are open to whoever reaches the in
     0.25.0 runs, and never roll back below it.
   - The services read the registry by `?kind=` and never get a sensor; the dashboard copies the vendors and
     `DeviceRules` and moves before the sensor is registered (HAS-426).
+- **The Hikvision binding and the gate** (HAS-445, `V25`, SDK 1.22.0, epic HAS-442): the door station at the gate,
+  read by `gate-service`, is the kind `intercom`, of the vendor `hikvision`, reached by `HikvisionBinding` - two nullable
+  columns `hikvision_address` and `hikvision_serial_number`, told by the serial number of `System/deviceInfo`; the Shelly
+  that pulses the drive of the gate is the kind `gate`, an ordinary Shelly row on the channel 0 (`checkGate`: the Shelly 1
+  Gen1 of the gate has one relay, `auto_off` 1 s - read on 2026-11-17).
+  - **The rules of BleBox a third time**: the vendor is the binding both ways (`devices_hikvision_vendor`), the kind is
+    the binding (`devices_hikvision_of_intercoms`), one device per serial number and one per address
+    (`devices_hikvision_serial_number_uq`, `devices_hikvision_address_uq`, both `DEVICE_CONFLICT` by their names). No
+    account of the station is stored - the bridge of the cluster logs in with a secret.
+  - **Rollout and rollback** (rehearsed 2026-11-17 on a throwaway PostgreSQL with SSL, the released 0.25.1 before and
+    after the new build): 0.25.1 reads, writes and reads by kind next to `V25` (its rows have one of six bindings and
+    pass the check of seven), but **cannot read an intercom or a gate**: once one is stored, its read of the whole
+    registry answers `500`. Register them only after 0.26.0 runs, and never roll back below it.
+  - The services read the registry by `?kind=`; the dashboard copies the kinds, the vendors and `DeviceRules` and moves
+    before either device is registered (HAS-445).
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
@@ -698,7 +714,8 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- SDK **1.21.0** since HAS-436 (a no-op bump - the smog events of the household are not read here); 1.20.0 since HAS-425 (`DeviceKind.AIR_QUALITY_SENSOR`, `BleboxBinding`, `SmartVendor.BLEBOX` - `V24`; the
+- SDK **1.22.0** since HAS-445 (`DeviceKind.INTERCOM` / `GATE`, `HikvisionBinding`, `SmartVendor.HIKVISION` - `V25`; the
+  release before 0.26.0 cannot read a stored intercom or gate); 1.21.0 since HAS-436 (a no-op bump - the smog events of the household are not read here); 1.20.0 since HAS-425 (`DeviceKind.AIR_QUALITY_SENSOR`, `BleboxBinding`, `SmartVendor.BLEBOX` - `V24`; the
   release before 0.25.0 cannot read a stored sensor); 1.19.0 since HAS-415 (`MemberRequest` marks of the reminders - `V23`, additive); 1.18.0 since HAS-378 (`DeviceKind.AIR_CONDITIONER`, `GreeBinding`, `SmartVendor.GREE` - `V22`; the
   release before 0.23.0 cannot read a stored unit); 1.17.0 since HAS-409 (`MemberRequest`, additive); 1.16.0 since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` -
   no migration, the kind column is text; the release before 0.21.0 cannot read a stored valve).

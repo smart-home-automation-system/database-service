@@ -61,6 +61,14 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
         {"name": "Air sensor", "room": "garden", "kind": "air quality sensor", "vendor": "blebox", "enabled": true,
          "blebox": {"address": "192.0.2.23", "deviceId": "0123456789ab"}}""";
 
+    private static final String HIKVISION_STATION = """
+        {"name": "Intercom", "room": "garden", "kind": "intercom", "vendor": "hikvision", "enabled": true,
+         "hikvision": {"address": "192.0.2.93", "serialNumber": "DS-KV0000-WE1(B)0120200101RRA00000001"}}""";
+
+    private static final String SHELLY_GATE = """
+        {"name": "Gate", "room": "garden", "kind": "gate", "vendor": "shelly", "enabled": true,
+         "shelly": {"address": "192.0.2.94", "generation": 1, "channel": 0}}""";
+
     @Autowired
     private WebTestClient webTestClient;
 
@@ -175,9 +183,9 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             "A Shelly of generation 2 needs its deviceId - the id it reports under over MQTT");
         invalid("""
                 {"name": "Nowhere", "room": "office", "kind": "light", "vendor": "shelly", "enabled": true}""",
-            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this one has none");
+            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this one has none");
         invalid(SHELLY_BLINDS.replace("\"placement\"", "\"bthome\": {\"address\": \"7c:c6:b6:00:00:02\"}, \"placement\""),
-            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox - and this one has shelly and bthome");
+            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this one has shelly and bthome");
         //HAS-260: the model takes 0 to 299, the registry an output or the zone of a presence sensor
         invalid(SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 4"),
             "The channel of a Shelly is an output (0 to 3) or the zone of a presence sensor (200 to 299), not 4");
@@ -897,6 +905,115 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, blebox_device_id)
             VALUES (now(), 'Air sensor', 'GARDEN', 'AIR_QUALITY_SENSOR', 'BLEBOX', true, '0123456789ab')"""))
             .hasMessageContaining("devices_blebox_binding_whole");
+
+        assertThat(count()).isZero();
+    }
+
+    //The door station of Hikvision (HAS-445): its binding becomes the two columns of V25 and is answered as it
+    //was sent; found by its kind, which is how gate-service will read it
+    @Test
+    void should_register_a_hikvision_intercom_and_answer_it_as_it_was_sent() {
+        final long station = added(HIKVISION_STATION);
+
+        assertThat(stored(station))
+            .containsEntry("kind", "INTERCOM")
+            .containsEntry("vendor", "HIKVISION")
+            .containsEntry("hikvision_address", "192.0.2.93")
+            .containsEntry("hikvision_serial_number", "DS-KV0000-WE1(B)0120200101RRA00000001")
+            .containsEntry("shelly_address", null);
+
+        webTestClient.get()
+            .uri("/device/registry?kind=intercom")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.length()").isEqualTo(1)
+            .jsonPath("$[0].id").isEqualTo(station)
+            .jsonPath("$[0].kind").isEqualTo("intercom")
+            .jsonPath("$[0].vendor").isEqualTo("hikvision")
+            .jsonPath("$[0].hikvision.address").isEqualTo("192.0.2.93")
+            .jsonPath("$[0].hikvision.serialNumber").isEqualTo("DS-KV0000-WE1(B)0120200101RRA00000001")
+            .jsonPath("$[0].shelly").doesNotExist();
+    }
+
+    //the gate (HAS-445) is a Shelly like any other, found by its kind
+    @Test
+    void should_register_the_shelly_of_the_gate_and_find_it_by_its_kind() {
+        final long gate = added(SHELLY_GATE);
+
+        assertThat(stored(gate))
+            .containsEntry("kind", "GATE")
+            .containsEntry("vendor", "SHELLY")
+            .containsEntry("shelly_address", "192.0.2.94");
+
+        webTestClient.get()
+            .uri("/device/registry?kind=gate")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.length()").isEqualTo(1)
+            .jsonPath("$[0].id").isEqualTo(gate)
+            .jsonPath("$[0].shelly.address").isEqualTo("192.0.2.94");
+    }
+
+    //the serial number is the identity of a station: a second one is refused by the index of V25
+    @Test
+    void should_refuse_a_hikvision_station_registered_twice_by_its_serial_number() {
+        added(HIKVISION_STATION);
+
+        conflict(HIKVISION_STATION.replace("\"name\": \"Intercom\"", "\"name\": \"Intercom again\"")
+                .replace("192.0.2.93", "192.0.2.95"),
+            "A device is already registered for the Hikvision station with the serial number"
+                + " [DS-KV0000-WE1(B)0120200101RRA00000001]");
+    }
+
+    //the address is reserved for one station in DHCP
+    @Test
+    void should_refuse_a_hikvision_station_at_the_address_of_another() {
+        added(HIKVISION_STATION);
+
+        conflict(HIKVISION_STATION.replace("RRA00000001", "RRA00000002"),
+            "A device is already registered for the Hikvision station at [192.0.2.93]");
+    }
+
+    //refused in words: by DeviceRules, and by the model for a serial number not as the station gives it
+    @Test
+    void should_refuse_a_hikvision_station_the_registry_does_not_take_and_say_why() {
+        invalid(HIKVISION_STATION.replace("\"vendor\": \"hikvision\"", "\"vendor\": \"other\""),
+            "A device of the vendor [other] is not reached through the binding [hikvision]");
+        invalid(HIKVISION_STATION.replace("\"kind\": \"intercom\"", "\"kind\": \"light\""),
+            "A device of the kind [light] is not reached through the binding [hikvision], only through: shelly, eaton");
+
+        webTestClient.post()
+            .uri("/device/registry")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(HIKVISION_STATION.replace("DS-KV0000-WE1(B)0120200101RRA00000001", "---------"))
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        assertThat(count()).isZero();
+    }
+
+    //the schema keeps the binding to intercoms of Hikvision and to the form of the serial number, for a row
+    //written past the API
+    @Test
+    void should_refuse_a_hikvision_binding_the_schema_does_not_take() {
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, hikvision_address, hikvision_serial_number)
+            VALUES (now(), 'Intercom', 'GARDEN', 'LIGHT', 'HIKVISION', true, '192.0.2.93', 'DS-KV0000-WE1')"""))
+            .hasMessageContaining("devices_hikvision_of_intercoms");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, hikvision_address, hikvision_serial_number)
+            VALUES (now(), 'Intercom', 'GARDEN', 'INTERCOM', 'OTHER', true, '192.0.2.93', 'DS-KV0000-WE1')"""))
+            .hasMessageContaining("devices_hikvision_vendor");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, hikvision_address, hikvision_serial_number)
+            VALUES (now(), 'Intercom', 'GARDEN', 'INTERCOM', 'HIKVISION', true, '192.0.2.93', '---------')"""))
+            .hasMessageContaining("devices_hikvision_format");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, hikvision_serial_number)
+            VALUES (now(), 'Intercom', 'GARDEN', 'INTERCOM', 'HIKVISION', true, 'DS-KV0000-WE1')"""))
+            .hasMessageContaining("devices_hikvision_binding_whole");
 
         assertThat(count()).isZero();
     }

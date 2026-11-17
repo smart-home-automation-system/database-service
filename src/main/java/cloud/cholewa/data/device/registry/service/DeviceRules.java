@@ -19,7 +19,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-//What the SDK model leaves open: its six bindings and the fields of one kind only are all
+//What the SDK model leaves open: its seven bindings and the fields of one kind only are all
 //optional, and nothing in it ties them to the vendor and the kind of the device. The registry
 //does, here, before a device is stored - the schema (V13) repeats what one row can say of it, and
 //would answer with the name of a constraint where this answers in words.
@@ -40,10 +40,12 @@ final class DeviceRules {
         //an Eaton device is reached through a gateway of the AMX system and nothing else is; the
         //binding of a Shelly is a Shelly's. A Bluetooth sensor is of any vendor but Eaton; an
         //inverter is of none of the vendors the registry names (HAS-326). A Gree unit is reached by
-        //the protocol of Gree and nothing else is (HAS-377), a BleBox sensor by its own API over HTTP (HAS-424)
+        //the protocol of Gree and nothing else is (HAS-377), a BleBox sensor by its own API over HTTP (HAS-424),
+        //a Hikvision station by the SDK of Hikvision and its ISAPI (HAS-445)
         if ((vendor == SmartVendor.EATON) != (binding == Binding.EATON)
             || (vendor == SmartVendor.GREE) != (binding == Binding.GREE)
             || (vendor == SmartVendor.BLEBOX) != (binding == Binding.BLEBOX)
+            || (vendor == SmartVendor.HIKVISION) != (binding == Binding.HIKVISION)
             || (binding == Binding.SHELLY && vendor != SmartVendor.SHELLY)
             || (binding == Binding.INVERTER && vendor != SmartVendor.OTHER)) {
             throw new InvalidDeviceException(
@@ -90,6 +92,19 @@ final class DeviceRules {
         checkAppliance(device);
         checkInverter(device);
         checkWaterValve(device);
+        checkGate(device);
+    }
+
+    //The gate (HAS-445): the Shelly 1 of the gate has one relay, which gate-service pulses on the channel 0
+    //(its auto_off ends the pulse) - a gate without its channel, or on another, has no relay to pulse
+    private static void checkGate(final SmartDevice device) {
+        if (device.getKind() != DeviceKind.GATE) {
+            return;
+        }
+        if (!Integer.valueOf(0).equals(device.getShelly().getChannel())) {
+            throw new InvalidDeviceException(
+                "A device of the kind [gate] is reached on the channel 0, not " + device.getShelly().getChannel());
+        }
     }
 
     //The water valve (HAS-311): a Shelly X of the generation 2 or later - its readings are virtual
@@ -215,9 +230,12 @@ final class DeviceRules {
         if (device.getBlebox() != null) {
             given.add(Binding.BLEBOX);
         }
+        if (device.getHikvision() != null) {
+            given.add(Binding.HIKVISION);
+        }
         if (given.size() != 1) {
             throw new InvalidDeviceException(
-                "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree or blebox"
+                "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision"
                     + " - and this one has "
                     + (given.isEmpty() ? "none" : given.stream().map(Binding::toString).collect(Collectors.joining(" and "))));
         }
@@ -250,12 +268,17 @@ final class DeviceRules {
             //an air quality sensor is polled by weather-service over the API of its maker - a BleBox
             //sensor by its address and the id of its GET /info (HAS-424)
             case AIR_QUALITY_SENSOR -> EnumSet.of(Binding.BLEBOX);
+            //the intercom is the door station at the gate, read by gate-service through the bridge of the
+            //cluster - a Hikvision station by its address and serial number (HAS-445)
+            case INTERCOM -> EnumSet.of(Binding.HIKVISION);
+            //the gate is the Shelly that gives the drive of the gate its pulse (HAS-445)
+            case GATE -> EnumSet.of(Binding.SHELLY);
         };
     }
 
     //named as the fields of the model are
     private enum Binding {
-        SHELLY, EATON, BTHOME, INVERTER, GREE, BLEBOX;
+        SHELLY, EATON, BTHOME, INVERTER, GREE, BLEBOX, HIKVISION;
 
         @Override
         public String toString() {
