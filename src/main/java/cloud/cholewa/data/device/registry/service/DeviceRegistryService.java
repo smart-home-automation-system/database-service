@@ -123,18 +123,20 @@ public class DeviceRegistryService {
 
     //Gone for good, and with it whatever the services kept under its id. For an Eaton device
     //that is also its configuration: amx-service gets a 404 for the data point from here on
-    //An opening sensor that blinds still name is not removed: their window would read as closed
-    //from then on without a word - the link goes first, with a PUT of the blinds
+    //An opening sensor that blinds or a gate still name is not removed: the window would read as closed and the
+    //gate as not known from then on without a word (HAS-290, HAS-471) - the link goes first, with a PUT of the device
     public Mono<Void> remove(final long id) {
         return find(id)
-            .thenMany(Flux.defer(() -> repository.findAll(DeviceKind.BLINDS, null, null)))
-            .filter(blinds -> blinds.getOpeningSensors() != null && blinds.getOpeningSensors().contains(id))
-            .map(blinds -> blinds.getId() + " [" + blinds.getName() + "]")
+            .thenMany(Flux.defer(() -> Flux.concat(
+                repository.findAll(DeviceKind.BLINDS, null, null),
+                repository.findAll(DeviceKind.GATE, null, null))))
+            .filter(user -> user.getOpeningSensors() != null && user.getOpeningSensors().contains(id))
+            .map(user -> user.getKind().getValue() + " " + user.getId() + " [" + user.getName() + "]")
             .collectList()
             .flatMap(users -> users.isEmpty()
                 ? Mono.empty()
                 : Mono.error(new DeviceConflictException(
-                    "The device " + id + " is the opening sensor of the blinds " + String.join(", ", users)
+                    "The device " + id + " is the opening sensor of the " + String.join(", ", users)
                         + " - remove it from their openingSensors first")))
             .then(Mono.defer(() -> repository.deleteById(id)))
             .filter(removed -> removed > 0)
@@ -152,10 +154,10 @@ public class DeviceRegistryService {
     }
 
     //Each id of openingSensors has to be a registered device of the kind opening sensor - the
-    //rules have already kept the list to blinds, without a null or a repeat. A switched-off
-    //sensor is still a sensor of that window
-    private Mono<Void> openingSensorsRegistered(final DeviceEntity blinds) {
-        final List<Long> ids = blinds.getOpeningSensors();
+    //rules have already kept the list to blinds and gates, without a null or a repeat. A switched-off
+    //sensor is still a sensor of that window or gate
+    private Mono<Void> openingSensorsRegistered(final DeviceEntity carrier) {
+        final List<Long> ids = carrier.getOpeningSensors();
         if (ids.isEmpty()) {
             return Mono.empty();
         }

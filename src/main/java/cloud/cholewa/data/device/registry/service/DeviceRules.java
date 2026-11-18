@@ -189,17 +189,19 @@ final class DeviceRules {
         }
     }
 
-    //The sensors on the window of blinds (HAS-290): blinds only, each id once and none missing -
-    //the model lets a null item through (@Min says nothing of a null). That each id is an opening
-    //sensor of the registry needs the database, and is the service's to ask
+    //The sensors on the window of blinds (HAS-290) or on a gate (HAS-471 - a gate with them is a garage gate whose
+    //state gate-service knows): blinds and gates only, each id once and none missing - the model lets a null item
+    //through (@Min says nothing of a null). That each id is an opening sensor of the registry needs the database,
+    //and is the service's to ask
     private static void checkOpeningSensors(final SmartDevice device) {
         final List<Long> sensors = device.getOpeningSensors();
         if (sensors == null || sensors.isEmpty()) {
             return;
         }
-        if (device.getKind() != DeviceKind.BLINDS) {
+        if (device.getKind() != DeviceKind.BLINDS && device.getKind() != DeviceKind.GATE) {
             throw new InvalidDeviceException(
-                "openingSensors describe the window of blinds, not a device of the kind [" + device.getKind().getValue() + "]");
+                "openingSensors describe the window of blinds or a gate, not a device of the kind ["
+                    + device.getKind().getValue() + "]");
         }
         //List.of() answers contains(null) with an exception, not with false
         if (sensors.stream().anyMatch(Objects::isNull)) {

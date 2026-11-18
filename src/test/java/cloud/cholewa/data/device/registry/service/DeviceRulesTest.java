@@ -269,9 +269,21 @@ class DeviceRulesTest {
         }).doesNotThrowAnyException();
     }
 
+    //a gate with the sensor on it is a garage gate (HAS-471): the same list, the same rules as on blinds
+    @Test
+    void should_take_a_gate_with_the_opening_sensors_on_it() {
+        final SmartDevice gate = garageGate(List.of(69L));
+        final SmartDevice twice = garageGate(List.of(69L, 69L));
+
+        assertThatCode(() -> DeviceRules.check(gate)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> DeviceRules.check(twice))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("openingSensors name a sensor more than once: [69, 69]");
+    }
+
     @ParameterizedTest
-    @EnumSource(value = DeviceKind.class, names = "BLINDS", mode = EnumSource.Mode.EXCLUDE)
-    void should_refuse_opening_sensors_on_anything_but_blinds(final DeviceKind kind) {
+    @EnumSource(value = DeviceKind.class, names = {"BLINDS", "GATE"}, mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_opening_sensors_on_anything_but_blinds_and_gates(final DeviceKind kind) {
         final String binding = switch (kind) {
             case WEATHER_STATION -> "bthome";
             case INVERTER -> "inverter";
@@ -534,7 +546,7 @@ class DeviceRulesTest {
             .hasMessage("placement and positioning describe blinds, not a device of the kind [water valve]");
         assertThatThrownBy(() -> DeviceRules.check(device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
                 .shelly(VALVE).openingSensors(List.of(57L)).build()))
-            .hasMessage("openingSensors describe the window of blinds, not a device of the kind [water valve]");
+            .hasMessage("openingSensors describe the window of blinds or a gate, not a device of the kind [water valve]");
         assertThatThrownBy(() -> DeviceRules.check(device(DeviceKind.WATER_VALVE, SmartVendor.SHELLY, "none")
                 .shelly(VALVE).appliance(APPLIANCE).build()))
             .hasMessage("appliance describes an appliance, not a device of the kind [water valve]");
@@ -738,6 +750,13 @@ class DeviceRulesTest {
         return ApplianceSettings.builder()
             .runningAboveWatts(20).idleBelowWatts(3).minRunMinutes(5).finishedAfterMinutes(10)
             .reminderEveryMinutes(30).maxReminders(4).quietFrom("22:00").quietTo("07:00");
+    }
+
+    private static SmartDevice garageGate(final List<Long> sensors) {
+        return device(DeviceKind.GATE, SmartVendor.SHELLY, "shelly")
+            .shelly(ShellyBinding.builder().address("192.0.2.94").generation(1).channel(0).build())
+            .openingSensors(sensors)
+            .build();
     }
 
     private static SmartDevice.SmartDeviceBuilder<?, ?> device(

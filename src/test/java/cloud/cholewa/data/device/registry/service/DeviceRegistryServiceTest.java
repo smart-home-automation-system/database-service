@@ -12,6 +12,7 @@ import cloud.cholewa.home.model.EatonBinding;
 import cloud.cholewa.home.model.EatonGatewayType;
 import cloud.cholewa.home.model.LightKind;
 import cloud.cholewa.home.model.RoomName;
+import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
 import cloud.cholewa.home.model.SmartVendor;
 import org.junit.jupiter.api.Test;
@@ -279,6 +280,7 @@ class DeviceRegistryServiceTest {
     void should_remove_a_device() {
         when(repository.findById(7L)).thenReturn(Mono.just(device(7L, "Lamp", RoomName.OFFICE)));
         when(repository.findAll(DeviceKind.BLINDS, null, null)).thenReturn(Flux.just(blinds(9L, List.of(31L))));
+        when(repository.findAll(DeviceKind.GATE, null, null)).thenReturn(Flux.just(gate(150L, List.of(69L))));
         when(repository.deleteById(7L)).thenReturn(Mono.just(1L));
 
         sut.remove(7L).as(StepVerifier::create).verifyComplete();
@@ -339,14 +341,77 @@ class DeviceRegistryServiceTest {
         when(repository.findById(31L)).thenReturn(Mono.just(sensor(31L)));
         when(repository.findAll(DeviceKind.BLINDS, null, null))
             .thenReturn(Flux.just(blinds(9L, List.of(30L, 31L)), blinds(10L, List.of()), blinds(12L, List.of(31L))));
+        when(repository.findAll(DeviceKind.GATE, null, null)).thenReturn(Flux.just(gate(150L, List.of(69L))));
 
         sut.remove(31L).as(StepVerifier::create)
             .verifyErrorSatisfies(error -> assertThat(error)
                 .isInstanceOf(DeviceConflictException.class)
-                .hasMessage("The device 31 is the opening sensor of the blinds 9 [Window 9], 12 [Window 12]"
+                .hasMessage("The device 31 is the opening sensor of the blinds 9 [Window 9], blinds 12 [Window 12]"
                     + " - remove it from their openingSensors first"));
 
         verify(repository, never()).deleteById(31L);
+    }
+
+    //--- the opening sensors of a gate (HAS-471)
+
+    //the gate would read as not known from then on without a word: the link goes first, as for blinds
+    @Test
+    void should_refuse_to_remove_an_opening_sensor_a_gate_still_names() {
+        when(repository.findById(69L)).thenReturn(Mono.just(sensor(69L)));
+        when(repository.findAll(DeviceKind.BLINDS, null, null)).thenReturn(Flux.just(blinds(9L, List.of(31L))));
+        when(repository.findAll(DeviceKind.GATE, null, null))
+            .thenReturn(Flux.just(gate(147L, List.of()), gate(150L, List.of(69L))));
+
+        sut.remove(69L).as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error)
+                .isInstanceOf(DeviceConflictException.class)
+                .hasMessage("The device 69 is the opening sensor of the gate 150 [Gate 150]"
+                    + " - remove it from their openingSensors first"));
+
+        verify(repository, never()).deleteById(69L);
+    }
+
+    //each id of a gate is checked as each id of blinds: a registered opening sensor
+    @Test
+    void should_check_the_opening_sensors_of_a_gate() {
+        when(repository.findAllById(List.of(69L))).thenReturn(Flux.just(sensor(69L)));
+        when(repository.insert(any())).thenAnswer(stored ->
+            Mono.just(stored.<DeviceEntity>getArgument(0).toBuilder().id(150L).build()));
+
+        sut.add(gateDevice(List.of(69L))).as(StepVerifier::create)
+            .assertNext(device -> assertThat(device.getOpeningSensors()).containsExactly(69L))
+            .verifyComplete();
+
+        when(repository.findAllById(List.of(7L))).thenReturn(Flux.just(device(7L, "Lamp", RoomName.OFFICE)));
+        sut.add(gateDevice(List.of(7L))).as(StepVerifier::create)
+            .verifyErrorSatisfies(error -> assertThat(error)
+                .isInstanceOf(InvalidDeviceException.class)
+                .hasMessage("openingSensors name devices that are no registered opening sensor: [7]"));
+    }
+
+    private static SmartDevice gateDevice(final List<Long> sensors) {
+        return SmartDevice.builder()
+            .name("Garage gate")
+            .room(RoomName.GARAGE)
+            .kind(DeviceKind.GATE)
+            .vendor(SmartVendor.SHELLY)
+            .enabled(true)
+            .shelly(ShellyBinding.builder().address("192.0.2.96").generation(1).channel(0).build())
+            .openingSensors(sensors)
+            .build();
+    }
+
+    private static DeviceEntity gate(final long id, final List<Long> sensors) {
+        return device(id, "Gate " + id, RoomName.GARAGE).toBuilder()
+            .kind(DeviceKind.GATE)
+            .vendor(SmartVendor.SHELLY)
+            .eatonGateway(null)
+            .eatonPoint(null)
+            .shellyAddress("192.0.2." + (id % 200))
+            .shellyGeneration(1)
+            .shellyChannel(0)
+            .openingSensors(sensors)
+            .build();
     }
 
     private static SmartDevice blindsDevice(final List<Long> sensors) {
