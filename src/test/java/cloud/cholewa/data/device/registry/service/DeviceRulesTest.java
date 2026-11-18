@@ -272,8 +272,11 @@ class DeviceRulesTest {
     //a gate with the sensor on it is a garage gate (HAS-471): the same list, the same rules as on blinds
     @Test
     void should_take_a_gate_with_the_opening_sensors_on_it() {
-        assertThatCode(() -> DeviceRules.check(garageGate(List.of(69L)))).doesNotThrowAnyException();
-        assertThatThrownBy(() -> DeviceRules.check(garageGate(List.of(69L, 69L))))
+        final SmartDevice gate = garageGate(List.of(69L));
+        final SmartDevice twice = garageGate(List.of(69L, 69L));
+
+        assertThatCode(() -> DeviceRules.check(gate)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> DeviceRules.check(twice))
             .isInstanceOf(InvalidDeviceException.class)
             .hasMessage("openingSensors name a sensor more than once: [69, 69]");
     }
