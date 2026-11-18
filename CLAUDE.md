@@ -550,6 +550,17 @@ writes of both registries and of the calendar are open to whoever reaches the in
     registry answers `500`. Register them only after 0.26.0 runs, and never roll back below it.
   - The services read the registry by `?kind=`; the dashboard copies the kinds, the vendors and `DeviceRules` and moves
     before either device is registered (HAS-445).
+- **The opening sensors of a gate** (HAS-471, `V26`, SDK 1.23.0, epic HAS-442): a `gate` with `openingSensors` is a
+  garage gate (its BLU Door/Window sensor - registry 69 / 70), a `gate` without one the driveway gate. The column of
+  `V16`: `DeviceRules` and `V26` (`devices_opening_sensors_of_blinds_and_gates`, replacing the check of blinds alone -
+  the task planned no migration, the check of `V16` needed one) let the kind `GATE` carry it; the service checks
+  each id as for blinds and `remove` reads the gates next to the blinds (`DEVICE_CONFLICT`, each user named with its
+  kind - `blinds 9 [Window 9], gate 150 [Garage gate]`).
+  - **Rollout and rollback** (`SchemaMigrationOnPostgresTest`): the released 0.26.0 writes no list on a gate and
+    passes the new check; it reads a gate with sensors, but its `remove` reads the blinds only and deletes a sensor
+    a gate names without a word - only while the two run side by side, as with `V16`.
+  - **The dashboard sends `openingSensors` for blinds only** (`smart-device-form.ts`) until HAS-454: a garage gate
+    saved in its devices form loses the link. Change a garage gate through Bruno until then.
 - **A new `DeviceKind` must reach every reader before a row holds it**, and a constant renamed
   in the SDK needs a migration of the rows here - the rules of the roles and the rooms.
 
@@ -714,7 +725,8 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- SDK **1.22.0** since HAS-445 (`DeviceKind.INTERCOM` / `GATE`, `HikvisionBinding`, `SmartVendor.HIKVISION` - `V25`; the
+- SDK **1.23.0** since HAS-471 (`openingSensors` of a gate - `V26`; the garage gate events are not read here);
+  1.22.0 since HAS-445 (`DeviceKind.INTERCOM` / `GATE`, `HikvisionBinding`, `SmartVendor.HIKVISION` - `V25`; the
   release before 0.26.0 cannot read a stored intercom or gate); 1.21.0 since HAS-436 (a no-op bump - the smog events of the household are not read here); 1.20.0 since HAS-425 (`DeviceKind.AIR_QUALITY_SENSOR`, `BleboxBinding`, `SmartVendor.BLEBOX` - `V24`; the
   release before 0.25.0 cannot read a stored sensor); 1.19.0 since HAS-415 (`MemberRequest` marks of the reminders - `V23`, additive); 1.18.0 since HAS-378 (`DeviceKind.AIR_CONDITIONER`, `GreeBinding`, `SmartVendor.GREE` - `V22`; the
   release before 0.23.0 cannot read a stored unit); 1.17.0 since HAS-409 (`MemberRequest`, additive); 1.16.0 since HAS-311 (the water valve, `DeviceKind.WATER_VALVE` -

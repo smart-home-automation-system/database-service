@@ -459,20 +459,38 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             .jsonPath("$.errors[0].details").isEqualTo("The device " + left + " is the opening sensor of the blinds "
                 + blinds + " [Office window] - remove it from their openingSensors first");
 
+        //a garage gate (HAS-471, V26) carries the list too, and keeps its sensor as blinds do
+        final long garage = added(SHELLY_GATE.replace("192.0.2.94", "192.0.2.96")
+            .replace("\"channel\": 0}", "\"channel\": 0}, \"openingSensors\": [" + right + "]"));
+        assertThat(stored(garage)).containsEntry("opening_sensors", String.valueOf(right));
+        webTestClient.get().uri("/device/registry/{id}", garage).exchange()
+            .expectBody().jsonPath("$.openingSensors[0]").isEqualTo(right);
+        webTestClient.delete().uri("/device/registry/{id}", right).exchange()
+            .expectStatus().isEqualTo(409)
+            .expectBody()
+            .jsonPath("$.errors[0].details").isEqualTo("The device " + right + " is the opening sensor of the blinds "
+                + blinds + " [Office window], gate " + garage + " [Gate] - remove it from their openingSensors first");
+
         //a replacement without the list removes the link, and the sensor may go
         replaced(blinds, SHELLY_BLINDS).expectStatus().isOk();
         assertThat(stored(blinds)).containsEntry("opening_sensors", "");
         webTestClient.delete().uri("/device/registry/{id}", left).exchange().expectStatus().isNoContent();
     }
 
-    //what gets past the API is still kept to blinds and free of a NULL by the checks of V16
+    //what gets past the API is still kept to blinds and gates (V26, before it blinds alone - V16) and free of a
+    //NULL by the checks of the schema
     @Test
-    void should_keep_opening_sensors_to_blinds_in_the_schema_too() {
+    void should_keep_opening_sensors_to_blinds_and_gates_in_the_schema_too() {
         final long light = added(EATON_LIGHT);
 
         databaseClient.sql("UPDATE devices SET opening_sensors = '{1}' WHERE id = " + light).then()
             .as(StepVerifier::create)
-            .verifyErrorSatisfies(error -> assertThat(error).hasMessageContaining("devices_opening_sensors_of_blinds"));
+            .verifyErrorSatisfies(error -> assertThat(error)
+                .hasMessageContaining("devices_opening_sensors_of_blinds_and_gates"));
+        final long gate = added(SHELLY_GATE);
+        databaseClient.sql("UPDATE devices SET opening_sensors = '{1}' WHERE id = " + gate).then()
+            .as(StepVerifier::create)
+            .verifyComplete();
         final long blinds = added(SHELLY_BLINDS);
         databaseClient.sql("UPDATE devices SET opening_sensors = '{1,NULL}' WHERE id = " + blinds).then()
             .as(StepVerifier::create)

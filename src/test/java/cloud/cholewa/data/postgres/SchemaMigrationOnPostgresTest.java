@@ -474,6 +474,36 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0));
     }
 
+    //V26 (HAS-471) over the registry as it is: blinds keep the sensors of their window and a gate takes some, which
+    //V16 refused; a row the released version inserts afterwards, not naming the column, gets the empty list
+    @Test
+    void should_keep_the_sensors_of_blinds_and_take_those_of_a_gate() {
+        final String schema = "rehearsal_gate_sensors";
+        startOver(schema);
+        migrate(schema, "25");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point,
+                opening_sensors)
+            VALUES (now(), 'Cinema windows', 'CINEMA', 'BLINDS', 'EATON', true, 'BLINDS', 20, '{31,30}')"""
+            .formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
+                shelly_channel)
+            VALUES (now(), 'Garage gate', 'GARAGE', 'GATE', 'SHELLY', true, '192.0.2.96', 1, 0)""".formatted(schema));
+
+        migrate(schema, "latest");
+        execute("UPDATE %s.devices SET opening_sensors = '{69}' WHERE kind = 'GATE'".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation,
+                shelly_channel)
+            VALUES (now(), 'Driveway gate', 'GARDEN', 'GATE', 'SHELLY', true, '192.0.2.94', 1, 0)""".formatted(schema));
+
+        assertThat(rows("SELECT name, array_to_string(opening_sensors, ',') AS sensors FROM %s.devices ORDER BY id"
+            .formatted(schema)))
+            .extracting(device -> device.get("name"), device -> device.get("sensors"))
+            .containsExactly(tuple("Cinema windows", "31,30"), tuple("Garage gate", "69"), tuple("Driveway gate", ""));
+    }
+
     //V23 (HAS-415) over the requests as they are: one done before it counts as announced, so its author is
     //not told after the deploy; an open one has no mark, and neither has a row the released version inserts
     //afterwards, not naming the columns
