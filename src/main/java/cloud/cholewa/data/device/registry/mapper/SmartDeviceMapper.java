@@ -10,6 +10,7 @@ import cloud.cholewa.home.model.HikvisionBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
+import cloud.cholewa.home.model.XsenseBinding;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -43,6 +44,18 @@ public class SmartDeviceMapper {
             .gree(gree(entity))
             .blebox(blebox(entity))
             .hikvision(hikvision(entity))
+            .xsense(xsense(entity))
+            .build();
+    }
+
+    //the X-Sense binding is told by the serial of the base station, whole or absent (V27)
+    private static XsenseBinding xsense(final DeviceEntity entity) {
+        if (entity.getXsenseStationSerial() == null) {
+            return null;
+        }
+        return XsenseBinding.builder()
+            .stationSerial(entity.getXsenseStationSerial())
+            .deviceId(entity.getXsenseDeviceId())
             .build();
     }
 

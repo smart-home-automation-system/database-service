@@ -49,6 +49,7 @@ public class DeviceRegistryService {
     private static final String BLEBOX_DEVICE_ID_UNIQUE_CONSTRAINT = "devices_blebox_device_id_uq";
     private static final String HIKVISION_ADDRESS_UNIQUE_CONSTRAINT = "devices_hikvision_address_uq";
     private static final String HIKVISION_SERIAL_NUMBER_UNIQUE_CONSTRAINT = "devices_hikvision_serial_number_uq";
+    private static final String XSENSE_DETECTOR_UNIQUE_CONSTRAINT = "devices_xsense_detector_uq";
 
     private final SmartDeviceMapper mapper;
     private final DeviceEntityMapper entityMapper;
@@ -232,6 +233,11 @@ public class DeviceRegistryService {
         if (message.contains(HIKVISION_ADDRESS_UNIQUE_CONSTRAINT)) {
             return new DeviceConflictException(
                 "A device is already registered for the Hikvision station at [" + device.getHikvisionAddress() + "]");
+        }
+        if (message.contains(XSENSE_DETECTOR_UNIQUE_CONSTRAINT)) {
+            return new DeviceConflictException(
+                "A device is already registered for the X-Sense detector [" + device.getXsenseDeviceId()
+                    + "] of the base station [" + device.getXsenseStationSerial() + "]");
         }
         return exception;
     }

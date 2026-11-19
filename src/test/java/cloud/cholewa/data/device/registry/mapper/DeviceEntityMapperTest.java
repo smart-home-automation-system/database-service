@@ -17,6 +17,7 @@ import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
 import cloud.cholewa.home.model.SmartVendor;
+import cloud.cholewa.home.model.XsenseBinding;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -196,6 +197,7 @@ class DeviceEntityMapperTest {
             .blebox(BleboxBinding.builder().address("192.0.2.23").deviceId("0123456789ab").build())
             .hikvision(HikvisionBinding.builder().address("192.0.2.93").serialNumber("DS-KV0000-WE1(B)0120200101RRA00000001")
                 .build())
+            .xsense(XsenseBinding.builder().stationSerial("SBS5000000001").deviceId("00000006").build())
             .build();
         final DeviceEntity existing = DeviceEntity.builder().id(7L).createdAt(REGISTERED).build();
 
@@ -245,6 +247,8 @@ class DeviceEntityMapperTest {
             .bleboxDeviceId("0123456789ab")
             .hikvisionAddress("192.0.2.93")
             .hikvisionSerialNumber("DS-KV0000-WE1(B)0120200101RRA00000001")
+            .xsenseStationSerial("SBS5000000001")
+            .xsenseDeviceId("00000006")
             .build();
 
         final DeviceEntity off = mapper.withEnabled(existing, false);
@@ -370,6 +374,27 @@ class DeviceEntityMapperTest {
                 .openingSensors(List.of())
                 .hikvisionAddress("192.0.2.93")
                 .hikvisionSerialNumber("DS-KV0000-WE1(B)0120200101RRA00000001")
+                .build());
+    }
+
+    //A fire detector of X-Sense (HAS-457): its binding becomes the two columns xsense_*
+    @Test
+    void should_make_a_new_row_of_an_xsense_detector_with_its_binding() {
+        final SmartDevice detector = SmartDevice.builder().name("Smoke detector").room(RoomName.KITCHEN)
+            .kind(DeviceKind.SMOKE_DETECTOR).vendor(SmartVendor.XSENSE).enabled(true)
+            .xsense(XsenseBinding.builder().stationSerial("SBS5000000001").deviceId("00000006").build())
+            .build();
+
+        assertThat(mapper.toNewEntity(detector)).usingRecursiveComparison().ignoringFields("createdAt")
+            .isEqualTo(DeviceEntity.builder()
+                .name("Smoke detector")
+                .room(RoomName.KITCHEN)
+                .kind(DeviceKind.SMOKE_DETECTOR)
+                .vendor(SmartVendor.XSENSE)
+                .enabled(true)
+                .openingSensors(List.of())
+                .xsenseStationSerial("SBS5000000001")
+                .xsenseDeviceId("00000006")
                 .build());
     }
 

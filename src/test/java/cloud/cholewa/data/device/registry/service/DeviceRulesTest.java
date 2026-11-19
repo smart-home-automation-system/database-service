@@ -17,6 +17,7 @@ import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
 import cloud.cholewa.home.model.SmartVendor;
+import cloud.cholewa.home.model.XsenseBinding;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -47,6 +48,8 @@ class DeviceRulesTest {
         .build();
     private static final HikvisionBinding HIKVISION = HikvisionBinding.builder().address("192.0.2.93")
         .serialNumber("DS-KV0000-WE1(B)0120200101RRA00000001").build();
+    private static final XsenseBinding XSENSE = XsenseBinding.builder().stationSerial("SBS5000000001").deviceId("00000006")
+        .build();
 
     //every pair of a kind and a binding the house may have, with the vendor the binding is of
     @ParameterizedTest
@@ -135,7 +138,8 @@ class DeviceRulesTest {
 
     @ParameterizedTest
     @EnumSource(value = DeviceKind.class, names = {"LIGHT", "WEATHER_STATION", "BTHOME_GATEWAY", "APPLIANCE", "INVERTER",
-        "WATER_VALVE", "AIR_CONDITIONER", "AIR_QUALITY_SENSOR", "INTERCOM", "GATE"}, mode = EnumSource.Mode.EXCLUDE)
+        "WATER_VALVE", "AIR_CONDITIONER", "AIR_QUALITY_SENSOR", "INTERCOM", "GATE", "SMOKE_DETECTOR", "CO_DETECTOR",
+        "HEAT_DETECTOR"}, mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_way_a_light_is_driven_on_anything_but_a_light(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.EATON, "eaton").lightKind(LightKind.DIMMER).build();
 
@@ -290,6 +294,7 @@ class DeviceRulesTest {
             case AIR_CONDITIONER -> "gree";
             case AIR_QUALITY_SENSOR -> "blebox";
             case INTERCOM -> "hikvision";
+            case SMOKE_DETECTOR, CO_DETECTOR, HEAT_DETECTOR -> "xsense";
             default -> "shelly";
         };
         final SmartVendor vendor = switch (kind) {
@@ -297,6 +302,7 @@ class DeviceRulesTest {
             case AIR_CONDITIONER -> SmartVendor.GREE;
             case AIR_QUALITY_SENSOR -> SmartVendor.BLEBOX;
             case INTERCOM -> SmartVendor.HIKVISION;
+            case SMOKE_DETECTOR, CO_DETECTOR, HEAT_DETECTOR -> SmartVendor.XSENSE;
             default -> SmartVendor.SHELLY;
         };
         final SmartDevice device = device(kind, vendor, binding).openingSensors(List.of(31L)).build();
@@ -358,7 +364,7 @@ class DeviceRulesTest {
 
     @ParameterizedTest
     @EnumSource(value = DeviceKind.class, names = {"APPLIANCE", "WEATHER_STATION", "INVERTER", "AIR_CONDITIONER",
-        "AIR_QUALITY_SENSOR", "INTERCOM"},
+        "AIR_QUALITY_SENSOR", "INTERCOM", "SMOKE_DETECTOR", "CO_DETECTOR", "HEAT_DETECTOR"},
         mode = EnumSource.Mode.EXCLUDE)
     void should_refuse_the_settings_of_an_appliance_on_another_kind(final DeviceKind kind) {
         final SmartDevice device = device(kind, SmartVendor.SHELLY, "shelly").appliance(APPLIANCE).build();
@@ -449,7 +455,7 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(inverter))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this"
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox, hikvision or xsense - and this"
                 + " one has bthome and inverter");
     }
 
@@ -597,7 +603,7 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(unit))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this"
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox, hikvision or xsense - and this"
                 + " one has shelly and gree");
     }
 
@@ -647,7 +653,7 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(sensor))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this"
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox, hikvision or xsense - and this"
                 + " one has none");
     }
 
@@ -742,8 +748,71 @@ class DeviceRulesTest {
 
         assertThatThrownBy(() -> DeviceRules.check(station))
             .isInstanceOf(InvalidDeviceException.class)
-            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision"
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox, hikvision or xsense"
                 + " - and this one has none");
+    }
+
+    //The fire detectors of X-Sense (HAS-457) are reached by their own binding, and only an X-Sense detector is
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = {"SMOKE_DETECTOR", "CO_DETECTOR", "HEAT_DETECTOR"})
+    void should_take_an_xsense_detector_with_its_base_station_and_id(final DeviceKind kind) {
+        assertThatCode(() -> DeviceRules.check(device(kind, SmartVendor.XSENSE, "xsense").build()))
+            .doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SmartVendor.class, names = "XSENSE", mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_the_xsense_binding_of_another_vendor(final SmartVendor vendor) {
+        final SmartDevice detector = device(DeviceKind.SMOKE_DETECTOR, vendor, "xsense").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(detector))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the vendor [" + vendor.getValue() + "] is not reached through the binding [xsense]");
+    }
+
+    //the vendor X-Sense is reached by what its base station publishes and nothing else
+    @ParameterizedTest
+    @CsvSource({"shelly", "bthome", "inverter", "gree", "blebox", "hikvision"})
+    void should_refuse_an_xsense_device_reached_through_another_binding(final String binding) {
+        final SmartDevice detector = device(DeviceKind.SMOKE_DETECTOR, SmartVendor.XSENSE, binding).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(detector))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device of the vendor [xsense] is not reached through the binding [" + binding + "]");
+    }
+
+    //a detector is its binding: no other kind is reached by it - a vendor xsense of another kind included
+    @ParameterizedTest
+    @EnumSource(value = DeviceKind.class, names = {"SMOKE_DETECTOR", "CO_DETECTOR", "HEAT_DETECTOR"},
+        mode = EnumSource.Mode.EXCLUDE)
+    void should_refuse_the_xsense_binding_on_another_kind(final DeviceKind kind) {
+        final SmartDevice device = device(kind, SmartVendor.XSENSE, "xsense").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(device))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessageStartingWith("A device of the kind [" + kind.getValue() + "] is not reached through the binding [xsense]");
+    }
+
+    //a detector is no light: what describes another kind is refused on it
+    @Test
+    void should_refuse_the_fields_of_another_kind_on_a_detector() {
+        final SmartDevice detector = device(DeviceKind.HEAT_DETECTOR, SmartVendor.XSENSE, "xsense")
+            .lightKind(LightKind.RELAY).build();
+
+        assertThatThrownBy(() -> DeviceRules.check(detector))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("lightKind describes a light, not a device of the kind [heat detector]");
+    }
+
+    //a detector without its binding is told what it has instead
+    @Test
+    void should_refuse_a_detector_without_its_binding() {
+        final SmartDevice detector = device(DeviceKind.CO_DETECTOR, SmartVendor.XSENSE, "none").build();
+
+        assertThatThrownBy(() -> DeviceRules.check(detector))
+            .isInstanceOf(InvalidDeviceException.class)
+            .hasMessage("A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox,"
+                + " hikvision or xsense - and this one has none");
     }
 
     private static ApplianceSettings.ApplianceSettingsBuilder<?, ?> appliance() {
@@ -774,6 +843,7 @@ class DeviceRulesTest {
             .inverter("inverter".equals(binding) ? INVERTER : null)
             .gree("gree".equals(binding) ? GREE : null)
             .blebox("blebox".equals(binding) ? BLEBOX : null)
-            .hikvision("hikvision".equals(binding) ? HIKVISION : null);
+            .hikvision("hikvision".equals(binding) ? HIKVISION : null)
+            .xsense("xsense".equals(binding) ? XSENSE : null);
     }
 }

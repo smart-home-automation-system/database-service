@@ -10,6 +10,7 @@ import cloud.cholewa.home.model.HikvisionBinding;
 import cloud.cholewa.home.model.InverterBinding;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
+import cloud.cholewa.home.model.XsenseBinding;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -59,6 +60,7 @@ public class DeviceEntityMapper {
         final GreeBinding gree = device.getGree();
         final BleboxBinding blebox = device.getBlebox();
         final HikvisionBinding hikvision = device.getHikvision();
+        final XsenseBinding xsense = device.getXsense();
 
         return DeviceEntity.builder()
             .name(device.getName())
@@ -96,7 +98,9 @@ public class DeviceEntityMapper {
             .bleboxAddress(blebox == null ? null : blebox.getAddress())
             .bleboxDeviceId(blebox == null ? null : blebox.getDeviceId())
             .hikvisionAddress(hikvision == null ? null : hikvision.getAddress())
-            .hikvisionSerialNumber(hikvision == null ? null : hikvision.getSerialNumber());
+            .hikvisionSerialNumber(hikvision == null ? null : hikvision.getSerialNumber())
+            .xsenseStationSerial(xsense == null ? null : xsense.getStationSerial())
+            .xsenseDeviceId(xsense == null ? null : xsense.getDeviceId());
     }
 
     //the column is never null: a list the payload left out, or sent as null, is none

@@ -69,6 +69,10 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
         {"name": "Gate", "room": "garden", "kind": "gate", "vendor": "shelly", "enabled": true,
          "shelly": {"address": "192.0.2.94", "generation": 1, "channel": 0}}""";
 
+    private static final String XSENSE_SMOKE_DETECTOR = """
+        {"name": "Smoke detector", "room": "kitchen", "kind": "smoke detector", "vendor": "xsense", "enabled": true,
+         "xsense": {"stationSerial": "SBS5000000001", "deviceId": "00000006"}}""";
+
     @Autowired
     private WebTestClient webTestClient;
 
@@ -183,9 +187,9 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             "A Shelly of generation 2 needs its deviceId - the id it reports under over MQTT");
         invalid("""
                 {"name": "Nowhere", "room": "office", "kind": "light", "vendor": "shelly", "enabled": true}""",
-            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this one has none");
+            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox, hikvision or xsense - and this one has none");
         invalid(SHELLY_BLINDS.replace("\"placement\"", "\"bthome\": {\"address\": \"7c:c6:b6:00:00:02\"}, \"placement\""),
-            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision - and this one has shelly and bthome");
+            "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox, hikvision or xsense - and this one has shelly and bthome");
         //HAS-260: the model takes 0 to 299, the registry an output or the zone of a presence sensor
         invalid(SHELLY_BLINDS.replace("\"channel\": 0", "\"channel\": 4"),
             "The channel of a Shelly is an output (0 to 3) or the zone of a presence sensor (200 to 299), not 4");
@@ -1032,6 +1036,106 @@ class DeviceRegistryWritesOnPostgresTest extends OnPostgres {
             INSERT INTO devices (created_at, name, room, kind, vendor, enabled, hikvision_serial_number)
             VALUES (now(), 'Intercom', 'GARDEN', 'INTERCOM', 'HIKVISION', true, 'DS-KV0000-WE1')"""))
             .hasMessageContaining("devices_hikvision_binding_whole");
+
+        assertThat(count()).isZero();
+    }
+
+    //A fire detector of X-Sense (HAS-457): its binding becomes the two columns of V27 and is answered as it was
+    //sent; found by its kind, which is how safety-service will read it
+    @Test
+    void should_register_an_xsense_detector_and_answer_it_as_it_was_sent() {
+        final long detector = added(XSENSE_SMOKE_DETECTOR);
+
+        assertThat(stored(detector))
+            .containsEntry("kind", "SMOKE_DETECTOR")
+            .containsEntry("vendor", "XSENSE")
+            .containsEntry("xsense_station_serial", "SBS5000000001")
+            .containsEntry("xsense_device_id", "00000006")
+            .containsEntry("shelly_address", null);
+
+        webTestClient.get()
+            .uri("/device/registry?kind=smoke detector")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.length()").isEqualTo(1)
+            .jsonPath("$[0].id").isEqualTo(detector)
+            .jsonPath("$[0].kind").isEqualTo("smoke detector")
+            .jsonPath("$[0].vendor").isEqualTo("xsense")
+            .jsonPath("$[0].xsense.stationSerial").isEqualTo("SBS5000000001")
+            .jsonPath("$[0].xsense.deviceId").isEqualTo("00000006")
+            .jsonPath("$[0].shelly").doesNotExist();
+    }
+
+    //the three kinds of detectors are stored and read alike
+    @Test
+    void should_register_a_co_and_a_heat_detector_of_the_same_base() {
+        final long co = added(XSENSE_SMOKE_DETECTOR.replace("smoke detector", "co detector")
+            .replace("Smoke detector", "CO detector").replace("00000006", "00000007"));
+        final long heat = added(XSENSE_SMOKE_DETECTOR.replace("smoke detector", "heat detector")
+            .replace("Smoke detector", "Heat detector").replace("00000006", "00000008"));
+
+        assertThat(stored(co)).containsEntry("kind", "CO_DETECTOR");
+        assertThat(stored(heat)).containsEntry("kind", "HEAT_DETECTOR");
+    }
+
+    //the pair of the base and the id is a detector: a second one is refused by the index of V27
+    @Test
+    void should_refuse_an_xsense_detector_registered_twice() {
+        added(XSENSE_SMOKE_DETECTOR);
+
+        conflict(XSENSE_SMOKE_DETECTOR.replace("\"name\": \"Smoke detector\"", "\"name\": \"Smoke detector again\""),
+            "A device is already registered for the X-Sense detector [00000006] of the base station [SBS5000000001]");
+    }
+
+    //two bases may give the same id: the id alone is no identity
+    @Test
+    void should_take_the_same_id_on_another_base_station() {
+        added(XSENSE_SMOKE_DETECTOR);
+
+        added(XSENSE_SMOKE_DETECTOR.replace("Smoke detector", "Other smoke detector").replace("SBS5000000001", "SBS5000000002"));
+
+        assertThat(count()).isEqualTo(2);
+    }
+
+    //refused in words: by DeviceRules, and by the model for a serial not as the base gives it
+    @Test
+    void should_refuse_an_xsense_detector_the_registry_does_not_take_and_say_why() {
+        invalid(XSENSE_SMOKE_DETECTOR.replace("\"vendor\": \"xsense\"", "\"vendor\": \"other\""),
+            "A device of the vendor [other] is not reached through the binding [xsense]");
+        invalid(XSENSE_SMOKE_DETECTOR.replace("\"kind\": \"smoke detector\"", "\"kind\": \"light\""),
+            "A device of the kind [light] is not reached through the binding [xsense], only through: shelly, eaton");
+
+        webTestClient.post()
+            .uri("/device/registry")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(XSENSE_SMOKE_DETECTOR.replace("SBS5000000001", "sbs5000000001"))
+            .exchange()
+            .expectStatus().isBadRequest();
+
+        assertThat(count()).isZero();
+    }
+
+    //the schema keeps the binding to the detectors of X-Sense and to the form of the serial, for a row written
+    //past the API
+    @Test
+    void should_refuse_an_xsense_binding_the_schema_does_not_take() {
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, xsense_station_serial, xsense_device_id)
+            VALUES (now(), 'Smoke', 'KITCHEN', 'LIGHT', 'XSENSE', true, 'SBS5000000001', '00000006')"""))
+            .hasMessageContaining("devices_xsense_of_detectors");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, xsense_station_serial, xsense_device_id)
+            VALUES (now(), 'Smoke', 'KITCHEN', 'SMOKE_DETECTOR', 'OTHER', true, 'SBS5000000001', '00000006')"""))
+            .hasMessageContaining("devices_xsense_vendor");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, xsense_station_serial, xsense_device_id)
+            VALUES (now(), 'Smoke', 'KITCHEN', 'SMOKE_DETECTOR', 'XSENSE', true, 'SBS5000000001', '0000000g')"""))
+            .hasMessageContaining("devices_xsense_format");
+        assertThatThrownBy(() -> execute("""
+            INSERT INTO devices (created_at, name, room, kind, vendor, enabled, xsense_station_serial)
+            VALUES (now(), 'Smoke', 'KITCHEN', 'SMOKE_DETECTOR', 'XSENSE', true, 'SBS5000000001')"""))
+            .hasMessageContaining("devices_xsense_binding_whole");
 
         assertThat(count()).isZero();
     }

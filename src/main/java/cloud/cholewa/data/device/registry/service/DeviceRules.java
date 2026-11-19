@@ -19,7 +19,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-//What the SDK model leaves open: its seven bindings and the fields of one kind only are all
+//What the SDK model leaves open: its eight bindings and the fields of one kind only are all
 //optional, and nothing in it ties them to the vendor and the kind of the device. The registry
 //does, here, before a device is stored - the schema (V13) repeats what one row can say of it, and
 //would answer with the name of a constraint where this answers in words.
@@ -41,11 +41,13 @@ final class DeviceRules {
         //binding of a Shelly is a Shelly's. A Bluetooth sensor is of any vendor but Eaton; an
         //inverter is of none of the vendors the registry names (HAS-326). A Gree unit is reached by
         //the protocol of Gree and nothing else is (HAS-377), a BleBox sensor by its own API over HTTP (HAS-424),
-        //a Hikvision station by the SDK of Hikvision and its ISAPI (HAS-445)
+        //a Hikvision station by the SDK of Hikvision and its ISAPI (HAS-445), an X-Sense detector by what its base
+        //station publishes (HAS-457)
         if ((vendor == SmartVendor.EATON) != (binding == Binding.EATON)
             || (vendor == SmartVendor.GREE) != (binding == Binding.GREE)
             || (vendor == SmartVendor.BLEBOX) != (binding == Binding.BLEBOX)
             || (vendor == SmartVendor.HIKVISION) != (binding == Binding.HIKVISION)
+            || (vendor == SmartVendor.XSENSE) != (binding == Binding.XSENSE)
             || (binding == Binding.SHELLY && vendor != SmartVendor.SHELLY)
             || (binding == Binding.INVERTER && vendor != SmartVendor.OTHER)) {
             throw new InvalidDeviceException(
@@ -235,9 +237,13 @@ final class DeviceRules {
         if (device.getHikvision() != null) {
             given.add(Binding.HIKVISION);
         }
+        if (device.getXsense() != null) {
+            given.add(Binding.XSENSE);
+        }
         if (given.size() != 1) {
             throw new InvalidDeviceException(
-                "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox or hikvision"
+                "A device is reached through exactly one binding - shelly, eaton, bthome, inverter, gree, blebox, hikvision"
+                    + " or xsense"
                     + " - and this one has "
                     + (given.isEmpty() ? "none" : given.stream().map(Binding::toString).collect(Collectors.joining(" and "))));
         }
@@ -275,12 +281,15 @@ final class DeviceRules {
             case INTERCOM -> EnumSet.of(Binding.HIKVISION);
             //the gate is the Shelly that gives the drive of the gate its pulse (HAS-445)
             case GATE -> EnumSet.of(Binding.SHELLY);
+            //the fire detectors are read by safety-service from what their base station publishes - an X-Sense
+            //detector by the serial of its base and the id the base gives it (HAS-457)
+            case SMOKE_DETECTOR, CO_DETECTOR, HEAT_DETECTOR -> EnumSet.of(Binding.XSENSE);
         };
     }
 
     //named as the fields of the model are
     private enum Binding {
-        SHELLY, EATON, BTHOME, INVERTER, GREE, BLEBOX, HIKVISION;
+        SHELLY, EATON, BTHOME, INVERTER, GREE, BLEBOX, HIKVISION, XSENSE;
 
         @Override
         public String toString() {

@@ -87,9 +87,11 @@ public class EatonConfigurationMapper {
             //an appliance is a Shelly plug (HAS-272), an inverter is read by energy-service (HAS-326), the
             //water valve is a Shelly read by water-service (HAS-311), an air conditioner is driven by
             //aircon-service (HAS-377), an air quality sensor is polled by weather-service (HAS-424) and the
-            //intercom and the gate are gate-service's (HAS-445) - never a data point of the AMX system
+            //intercom and the gate are gate-service's (HAS-445), the fire detectors safety-service's (HAS-457) -
+            //never a data point of the AMX system
             case OPENING_SENSOR, PRESENCE_SENSOR, WEATHER_STATION, BTHOME_GATEWAY, APPLIANCE, INVERTER, WATER_VALVE,
-                AIR_CONDITIONER, AIR_QUALITY_SENSOR, INTERCOM, GATE -> Optional.empty();
+                AIR_CONDITIONER, AIR_QUALITY_SENSOR, INTERCOM, GATE, SMOKE_DETECTOR, CO_DETECTOR, HEAT_DETECTOR ->
+                Optional.empty();
         };
     }
 
