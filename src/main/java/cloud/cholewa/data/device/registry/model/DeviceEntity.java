@@ -16,9 +16,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
-//A row of the device registry - the one table of the devices of the house. The seven bindings of
-//the SDK model (shelly, eaton, bthome, inverter, gree, blebox, hikvision) are columns of the one row here -
-//exactly one of them is filled, which the schema checks (V13, V20, V22, V24, V25). What may not be null is said there as well: nothing
+//A row of the device registry - the one table of the devices of the house. The eight bindings of
+//the SDK model (shelly, eaton, bthome, inverter, gree, blebox, hikvision, xsense) are columns of the one row here -
+//exactly one of them is filled, which the schema checks (V13, V20, V22, V24, V25, V27). What may not be null is said there as well: nothing
 //validates an entity, so an annotation here would promise what no code keeps.
 @Value
 @Builder(toBuilder = true)
@@ -81,4 +81,8 @@ public class DeviceEntity {
     //the Hikvision binding (V25): both filled for a Hikvision intercom, neither for another device
     String hikvisionAddress;
     String hikvisionSerialNumber;
+
+    //the X-Sense binding (V27): both filled for an X-Sense detector, neither for another device
+    String xsenseStationSerial;
+    String xsenseDeviceId;
 }

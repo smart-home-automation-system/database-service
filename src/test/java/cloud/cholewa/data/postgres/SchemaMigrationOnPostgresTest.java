@@ -474,6 +474,56 @@ class SchemaMigrationOnPostgresTest extends OnPostgres {
             .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0));
     }
 
+    //V27 (HAS-457) over the registry as it is: a device of each of the seven bindings keeps it and has no X-Sense
+    //binding, and so does a row the released version inserts afterwards, not naming the columns - the check of one
+    //binding of eight takes what the check of one of seven took
+    @Test
+    void should_leave_every_device_without_an_xsense_binding_also_one_an_older_release_inserts() {
+        final String schema = "rehearsal_xsense";
+        startOver(schema);
+        migrate(schema, "26");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Cinema windows', 'CINEMA', 'BLINDS', 'EATON', true, 'BLINDS', 20)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, shelly_address, shelly_generation)
+            VALUES (now(), 'Kitchen lamp', 'KITCHEN', 'LIGHT', 'SHELLY', true, '192.0.2.65', 1)""".formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, bthome_address)
+            VALUES (now(), 'Garden weather', 'GARDEN', 'WEATHER_STATION', 'OTHER', true, '7c:c6:b6:00:00:01')"""
+            .formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, inverter_brand, inverter_serial_number)
+            VALUES (now(), 'Inverter', 'BOILER', 'INVERTER', 'OTHER', true, 'SOLAX', 'H1234567890ABC')"""
+            .formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, gree_address, gree_mac)
+            VALUES (now(), 'Air conditioner', 'OFFICE', 'AIR_CONDITIONER', 'GREE', true, '192.0.2.59', '02005e0000a1')"""
+            .formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, blebox_address, blebox_device_id)
+            VALUES (now(), 'Air sensor', 'GARDEN', 'AIR_QUALITY_SENSOR', 'BLEBOX', true, '192.0.2.23', '0123456789ab')"""
+            .formatted(schema));
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, hikvision_address, hikvision_serial_number)
+            VALUES (now(), 'Intercom', 'GARDEN', 'INTERCOM', 'HIKVISION', true, '192.0.2.93', 'DS-KV0000-WE1')"""
+            .formatted(schema));
+
+        migrate(schema, "latest");
+        execute("""
+            INSERT INTO %1$s.devices (created_at, name, room, kind, vendor, enabled, eaton_gateway, eaton_point)
+            VALUES (now(), 'Office windows', 'OFFICE', 'BLINDS', 'EATON', true, 'BLINDS', 21)""".formatted(schema));
+
+        assertThat(rows("""
+            SELECT num_nonnulls(shelly_address, eaton_gateway, bthome_address, inverter_serial_number, gree_mac,
+                    blebox_device_id, hikvision_serial_number) AS bindings,
+                num_nonnulls(xsense_station_serial, xsense_device_id) AS xsense
+            FROM %s.devices ORDER BY id""".formatted(schema)))
+            .extracting(device -> device.get("bindings"), device -> device.get("xsense"))
+            .containsExactly(tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0), tuple(1, 0),
+                tuple(1, 0));
+    }
+
     //V26 (HAS-471) over the registry as it is: blinds keep the sensors of their window and a gate takes some, which
     //V16 refused; a row the released version inserts afterwards, not naming the column, gets the empty list
     @Test

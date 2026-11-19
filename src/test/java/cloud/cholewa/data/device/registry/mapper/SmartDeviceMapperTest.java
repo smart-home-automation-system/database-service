@@ -17,6 +17,7 @@ import cloud.cholewa.home.model.RoomName;
 import cloud.cholewa.home.model.ShellyBinding;
 import cloud.cholewa.home.model.SmartDevice;
 import cloud.cholewa.home.model.SmartVendor;
+import cloud.cholewa.home.model.XsenseBinding;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -241,6 +242,25 @@ class SmartDeviceMapperTest {
             .vendor(SmartVendor.BLEBOX)
             .enabled(true)
             .blebox(BleboxBinding.builder().address("192.0.2.23").deviceId("0123456789ab").build())
+            .build());
+    }
+
+    //A fire detector of X-Sense (HAS-457): the two columns as its binding, told by the serial of the base
+    @Test
+    void should_map_an_xsense_detector_with_its_binding() {
+        final DeviceEntity entity = row().id(902L).name("Smoke detector").room(RoomName.KITCHEN)
+            .kind(DeviceKind.SMOKE_DETECTOR).vendor(SmartVendor.XSENSE).enabled(true)
+            .xsenseStationSerial("SBS5000000001").xsenseDeviceId("00000006")
+            .build();
+
+        assertThat(mapper.toDevice(entity)).isEqualTo(SmartDevice.builder()
+            .id(902L)
+            .name("Smoke detector")
+            .room(RoomName.KITCHEN)
+            .kind(DeviceKind.SMOKE_DETECTOR)
+            .vendor(SmartVendor.XSENSE)
+            .enabled(true)
+            .xsense(XsenseBinding.builder().stationSerial("SBS5000000001").deviceId("00000006").build())
             .build());
     }
 
