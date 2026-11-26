@@ -77,6 +77,29 @@ class HouseholdRegistryOnPostgresTest extends OnPostgres {
             .containsEntry("active", true);
     }
 
+    //the permission of the amplifier unlock (HAS-509, SDK 1.26.0): stored by the name of its constant, no migration -
+    //the column is TEXT[] (V12); answered by the read of the dashboard in the order it was given
+    @Test
+    void should_store_the_amplifier_unlock_by_its_name_and_answer_it_in_the_profiles() {
+        add(anna());
+
+        householdMemberService.replacePermissions(
+                "Anna", List.of(MemberPermission.AMPLIFIER_UNLOCK, MemberPermission.HEATING_SWITCH))
+            .as(StepVerifier::create)
+            .expectNextCount(1)
+            .verifyComplete();
+
+        assertThat(storedMember("Anna")).containsEntry("permissions", "AMPLIFIER_UNLOCK,HEATING_SWITCH");
+
+        webTestClient.get()
+            .uri("/household/profiles")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$[0].permissions")
+            .value(granted -> assertThat(granted).isEqualTo(List.of("amplifier_unlock", "heating_switch")));
+    }
+
     @Test
     void should_read_the_rooms_back_in_the_order_they_were_given() {
         add(anna());

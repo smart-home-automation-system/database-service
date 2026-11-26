@@ -401,6 +401,7 @@ class HouseholdControllerTest {
             new HouseholdProfile().name("Jan").role(MemberRole.RESIDENT),
             new HouseholdProfile().name("Ola").role(MemberRole.RESIDENT)
                 .addPermissionsItem(MemberPermission.HEATING_SWITCH)
+                .addPermissionsItem(MemberPermission.AMPLIFIER_UNLOCK)
         )));
 
         webTestClient.get()
@@ -412,7 +413,7 @@ class HouseholdControllerTest {
                 """
                     [
                       {"name": "Jan", "role": "resident"},
-                      {"name": "Ola", "role": "resident", "permissions": ["heating_switch"]}
+                      {"name": "Ola", "role": "resident", "permissions": ["heating_switch", "amplifier_unlock"]}
                     ]
                     """,
                 JsonCompareMode.STRICT
@@ -435,6 +436,27 @@ class HouseholdControllerTest {
             .jsonPath("$.permissions").value(granted -> assertThat(granted).isEqualTo(List.of("heating_switch")));
 
         verify(householdMemberService).replacePermissions("Ola", List.of(MemberPermission.HEATING_SWITCH));
+    }
+
+    //the permission of the amplifier unlock (HAS-509, SDK 1.26.0) - read from the body by its value, in the order sent
+    @Test
+    void should_replace_permissions_with_the_amplifier_unlock() {
+        when(householdMemberService.replacePermissions(eq("Ola"), any())).thenReturn(Mono.just(
+            new HouseholdMember().name("Ola").phone("+48111222333").role(MemberRole.RESIDENT)
+                .addPermissionsItem(MemberPermission.AMPLIFIER_UNLOCK)
+                .addPermissionsItem(MemberPermission.HEATING_SWITCH)));
+
+        webTestClient.put()
+            .uri("/household/member/Ola/permissions")
+            .body(BodyInserters.fromValue(List.of("amplifier_unlock", "heating_switch")))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.permissions")
+            .value(granted -> assertThat(granted).isEqualTo(List.of("amplifier_unlock", "heating_switch")));
+
+        verify(householdMemberService).replacePermissions(
+            "Ola", List.of(MemberPermission.AMPLIFIER_UNLOCK, MemberPermission.HEATING_SWITCH));
     }
 
     @Test
