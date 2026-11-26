@@ -2,7 +2,7 @@
 
 `cloud.cholewa:database-service` — the **persistence facade** of the smart home: the other
 services never talk to PostgreSQL themselves, they call this one over REST. Reactive (WebFlux,
-Spring Data R2DBC), Flyway for the schema. Java 21, Spring Boot 4.1.2
+Spring Data R2DBC), Flyway for the schema. Java 21, Spring Boot 4.2.0
 (`spring-boot-starter-parent`), Maven. Local port **6005** (management **8005**); in the deployed
 `home` profile **6200** with Actuator on **8200**, where the probes and the Prometheus scrape go.
 Docker image `magikabdul/database-service`; the pom keeps `0.0.1-SNAPSHOT`, the released version
@@ -688,8 +688,8 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 ## Database & Flyway
 
 - Connection and pool come from `cholewa-commons` (≥ 1.5.0, `database.*` group); this service
-  pins only `database.pool.max-size: 4`, its share of the 22 connections the managed database
-  allows (heating 2 / database 4 / water 2 / presence 2 = 10). It was 6 up to and including 0.8.0 (HAS-169):
+  pins only `database.pool.max-size: 4`, its share of the 47 connections of the managed database
+  (26 allotted to this project - the split is in `organization.md`). It was 6 up to and including 0.8.0 (HAS-169):
   the Deployment rolls, so during a rollout the old and the new pod each hold a pool and Flyway
   adds one JDBC connection that no `r2dbc_pool_*` metric shows — 16 + 6 + 1 = 23 in the worst
   case. With the new split the rollout of this service stays at 10 + 4 + 1 = 15, and even
@@ -741,7 +741,9 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
 
 ## Build, tests & gotchas
 
-- SDK **1.24.0** since HAS-457 (`DeviceKind.SMOKE_DETECTOR` / `CO_DETECTOR` / `HEAT_DETECTOR`, `XsenseBinding`,
+- SDK **1.26.0** since HAS-510 (`MemberPermission.AMPLIFIER_UNLOCK`, HAS-509 - no migration, `permissions` is `TEXT[]`
+  of the constant names; grant it to nobody before presence, appliance and gate run 1.26.0); 1.25.0 was skipped (its
+  `GateOpenSource.PANEL` is not read here); 1.24.0 since HAS-457 (`DeviceKind.SMOKE_DETECTOR` / `CO_DETECTOR` / `HEAT_DETECTOR`, `XsenseBinding`,
   `SmartVendor.XSENSE` - `V27`; the release before 0.28.0 cannot read a stored detector; the fire alarm events are not
   read here); 1.23.0 since HAS-471 (`openingSensors` of a gate - `V26`; the garage gate events are not read here);
   1.22.0 since HAS-445 (`DeviceKind.INTERCOM` / `GATE`, `HikvisionBinding`, `SmartVendor.HIKVISION` - `V25`; the
@@ -760,7 +762,10 @@ ERROR**, in the shared `Handled [<class>]: <message>` form — a 4xx at ERROR fe
   inline; a MapStruct `expression` names its classes through `@Mapper(imports = ...)` (`HouseholdMemberMapper`,
   `MemberDeviceMapper`). Before a change is done, search the diff for a package path followed by a class name outside the
   `import` and `package` lines.
-- **`cholewa-commons` 1.14.0** (HAS-214: `DomainExceptionProcessor`; 1.13.0 since HAS-311, 1.12.0 since HAS-276, 1.11.0 since HAS-272, from 1.9.0; 1.12.0 and 1.13.0 add publishers not used here): Logbook runs as a WebFilter in the reactive
+- **`cholewa-commons` 2.0.0** since HAS-510, with Spring Boot 4.2.0 - a no-op here: the move of the RabbitMQ support
+  concerns a service with a broker, and this one has none. The `HV000271` warnings of Hibernate Validator in the build
+  (`@Valid` on a `List` of the generated SDK models, once per model) are older than this bump - a template of the SDK,
+  nothing here; 1.14.0 (HAS-214: `DomainExceptionProcessor`; 1.13.0 since HAS-311, 1.12.0 since HAS-276, 1.11.0 since HAS-272, from 1.9.0; 1.12.0 and 1.13.0 add publishers not used here): Logbook runs as a WebFilter in the reactive
   chain, so its lines carry the `traceId` (1.10.0), and the actuator is left out of its log
   (1.10.1). This service has no `WebClient`, no own `LogbookClientHandler` and no `@Scheduled`
   task, so nothing else of 1.10.0 / 1.11.0 applies here.
