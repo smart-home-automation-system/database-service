@@ -11,7 +11,7 @@
 
 ![GitHub top language](https://img.shields.io/github/languages/top/smart-home-automation-system/database-service?style=plastic)
 ![Java](https://img.shields.io/badge/java-21-yellow?style=plastic)
-![SpringBoot](https://img.shields.io/badge/SpringBoot-4.1.2-blue?style=plastic)
+![SpringBoot](https://img.shields.io/badge/SpringBoot-4.2.0-blue?style=plastic)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=smart-home-automation-system_database-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=smart-home-automation-system_database-service)
 [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=smart-home-automation-system_database-service&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=smart-home-automation-system_database-service)
 
@@ -359,7 +359,8 @@ Since 0.9.0 a member also has a **role** (`admin` or `resident`) and **rooms** (
   a missing `rooms` as none.
 - A member can also have **permissions** — what they may do in the dashboard beyond their
   role, e.g. `"permissions": ["heating_switch"]`: the switch of the heating of the whole house
-  on their own page. Nobody has one until it is granted; like the rooms, an empty list is left
+  on their own page; `amplifier_unlock` (since 0.29.0, SDK 1.26.0, HAS-510): the button that
+  unhangs the amplifier after a loss of the grid. Nobody has one until it is granted; like the rooms, an empty list is left
   out of the answer. A permission decides what the dashboard offers and nothing more — no
   service checks it.
 - Each of the four things an update could change by accident has an operation of its own:
@@ -551,5 +552,5 @@ does not know: the value fails while the body is read, and the answer is a `400`
   a `NULL` among them; that a room is listed once is checked by the service, which can say so
   in its answer.
 - **Permissions** (`V12`): `household_members.permissions`, an array column like the rooms,
-  holding the `MemberPermission` constants (`HEATING_SWITCH`); empty for every member until
-  one is granted.
+  holding the `MemberPermission` constants (`HEATING_SWITCH`, `AMPLIFIER_UNLOCK` since 0.29.0 - no
+  migration); empty for every member until one is granted.
